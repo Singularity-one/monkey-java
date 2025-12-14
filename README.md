@@ -468,3 +468,354 @@ A: Monkey 語言中，表達式可以單獨作為語句出現，例如：
 4. **擴展**：添加字串、陣列等數據類型
 
 繼續加油！你正在建造一個完整的程式語言解釋器！🚀
+
+# 第三章：Evaluation - 快速開始指南
+
+## 🎯 你現在擁有什麼
+
+**一個完整運行的程式語言解釋器！** 🎉
+
+你可以執行：
+- 數學運算
+- 變數綁定
+- 函數定義和調用
+- 條件語句
+- 閉包
+- 遞迴
+
+## 📁 完整目錄結構
+
+```
+monkey-java/
+├── pom.xml
+└── src/
+    ├── main/
+    │   └── java/
+    │       └── com/
+    │           └── monkey/
+    │               ├── Main.java
+    │               ├── token/
+    │               │   ├── Token.java
+    │               │   └── TokenType.java
+    │               ├── lexer/
+    │               │   └── Lexer.java
+    │               ├── ast/
+    │               │   ├── (14 個 AST 節點類)
+    │               ├── parser/
+    │               │   └── Parser.java
+    │               ├── object/
+    │               │   ├── MonkeyObject.java
+    │               │   ├── ObjectType.java
+    │               │   ├── IntegerObject.java
+    │               │   ├── BooleanObject.java
+    │               │   ├── NullObject.java
+    │               │   ├── ReturnValue.java
+    │               │   ├── ErrorObject.java
+    │               │   ├── FunctionObject.java
+    │               │   └── Environment.java
+    │               └── evaluator/
+    │                   └── Evaluator.java
+    └── test/
+        └── java/
+            └── com/
+                └── monkey/
+                    ├── lexer/
+                    │   └── LexerTest.java
+                    ├── parser/
+                    │   └── ParserTest.java
+                    └── evaluator/
+                        └── EvaluatorTest.java
+```
+
+## 🚀 編譯和運行
+
+### 1. 編譯
+
+```bash
+mvn clean compile
+```
+
+### 2. 運行所有測試
+
+```bash
+mvn test
+```
+
+你應該看到所有測試通過：
+```
+[INFO] Tests run: 5, Failures: 0  (LexerTest)
+[INFO] Tests run: 12, Failures: 0 (ParserTest)
+[INFO] Tests run: 11, Failures: 0 (EvaluatorTest)
+[INFO] BUILD SUCCESS
+```
+
+### 3. 運行 Demo
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main" -Dexec.args="--demo"
+```
+
+### 4. 啟動 REPL
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+或打包後運行：
+```bash
+mvn package
+java -jar target/monkey-interpreter-1.0-SNAPSHOT.jar
+```
+
+## 🎮 REPL 使用示例
+
+```monkey
+Hello! This is the Monkey programming language!
+Feel free to type in commands
+              __,__
+     .--.  .-"     "-.  .--.
+    / .. \/  .-. .-.  \/ .. \
+   | |  '|  /   Y   \  |'  | |
+   | \   \  \ 0 | 0 /  /   / |
+    \ '- ,\.-"`` ``"-./, -' /
+     `'-' /_   ^ ^   _\ '-'`
+         |  \._   _./  |
+         \   \ `~` /   /
+          '._ '-=-' _.'
+             '~---~'
+
+>> 5 + 5
+10
+>> let a = 10
+10
+>> let b = 20
+20
+>> a + b
+30
+>> let add = fn(x, y) { x + y }
+fn(x, y) {
+(x + y)
+}
+>> add(5, 10)
+15
+>> exit
+Goodbye!
+```
+
+## 📝 Monkey 程式範例
+
+### 1. 變數和運算
+
+```monkey
+let x = 5;
+let y = 10;
+let sum = x + y;
+sum;  // 15
+```
+
+### 2. 函數
+
+```monkey
+let add = fn(a, b) {
+    a + b;
+};
+
+add(5, 10);  // 15
+```
+
+### 3. 閉包
+
+```monkey
+let newAdder = fn(x) {
+    fn(y) { x + y };
+};
+
+let addTwo = newAdder(2);
+addTwo(3);  // 5
+```
+
+### 4. 條件語句
+
+```monkey
+let max = fn(a, b) {
+    if (a > b) {
+        a
+    } else {
+        b
+    }
+};
+
+max(10, 5);  // 10
+```
+
+### 5. 遞迴 - 階乘
+
+```monkey
+let factorial = fn(n) {
+    if (n == 0) {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+};
+
+factorial(5);  // 120
+```
+
+### 6. 遞迴 - 費波那契數列
+
+```monkey
+let fibonacci = fn(n) {
+    if (n == 0) {
+        0
+    } else {
+        if (n == 1) {
+            1
+        } else {
+            fibonacci(n - 1) + fibonacci(n - 2)
+        }
+    }
+};
+
+fibonacci(10);  // 55
+```
+
+## 🎯 第三章核心概念
+
+### 1. Tree-Walking Interpreter
+
+直接遍歷 AST 並執行：
+
+```
+AST Node → Eval → Object
+```
+
+### 2. Object System
+
+所有運行時的值都是 `MonkeyObject`：
+
+- **IntegerObject**: 整數（`5`, `10`）
+- **BooleanObject**: 布林（`true`, `false`）
+- **NullObject**: 空值
+- **FunctionObject**: 函數
+- **ReturnValue**: Return 語句的值
+- **ErrorObject**: 錯誤
+
+### 3. Environment（環境）
+
+儲存變數綁定，支援作用域鏈：
+
+```
+outer env: { x: 5 }
+  ↑
+inner env: { y: 10 }
+```
+
+查找變數時，先在當前環境找，找不到就往外層找。
+
+### 4. 求值順序
+
+```
+1. 求值表達式 → 返回 Object
+2. 處理語句 → 可能產生副作用（變數綁定）
+3. 遇到 Return → 停止執行，返回值
+4. 遇到錯誤 → 停止執行，傳播錯誤
+```
+
+## 🔍 實現細節
+
+### 錯誤傳播
+
+一旦產生錯誤，立即停止執行並向上傳播：
+
+```java
+if (isError(evaluated)) {
+    return evaluated;
+}
+```
+
+### Return 語句處理
+
+用 `ReturnValue` 包裝返回值，讓它能穿透多層區塊：
+
+```java
+if (result instanceof ReturnValue) {
+    return ((ReturnValue) result).getValue();
+}
+```
+
+### 閉包實現
+
+函數物件保存定義時的環境：
+
+```java
+new FunctionObject(parameters, body, env)
+```
+
+調用時創建新環境，並以定義時的環境為外層：
+
+```java
+Environment extendedEnv = newEnclosedEnvironment(fn.getEnv());
+```
+
+## 🧪 測試覆蓋
+
+第三章實現了以下測試：
+
+✅ 整數表達式求值  
+✅ 布林表達式求值  
+✅ ! 運算符  
+✅ If/Else 表達式  
+✅ Return 語句  
+✅ 錯誤處理  
+✅ Let 語句  
+✅ 函數物件  
+✅ 函數應用  
+✅ 閉包
+
+## 🎓 學習重點
+
+### Evaluator 的核心
+
+1. **遞迴求值** - `eval()` 遞迴調用自己
+2. **模式匹配** - 根據節點類型選擇求值方法
+3. **環境管理** - 正確處理作用域
+4. **錯誤處理** - 及時檢查並傳播錯誤
+
+### 關鍵設計決策
+
+**為什麼用單例 TRUE/FALSE？**
+- 節省記憶體
+- 可以用 `==` 比較
+
+**為什麼需要 ReturnValue？**
+- 區分普通值和 return 語句的值
+- 讓 return 能穿透多層區塊
+
+**為什麼錯誤要立即傳播？**
+- 避免在錯誤狀態下繼續執行
+- 及早發現問題
+
+## 🎉 恭喜！
+
+你已經完成了前三章，擁有了一個功能完整的解釋器！
+
+現在你可以：
+
+✅ 詞法分析（Lexing）  
+✅ 語法分析（Parsing）  
+✅ 求值（Evaluation）
+
+這已經是一個完整的程式語言了！🚀
+
+## 📚 下一步
+
+雖然書還有更多章節（字串、陣列、內建函數等），但你已經掌握了核心概念。可以嘗試：
+
+1. **添加新的數據類型**（字串、陣列）
+2. **添加內建函數**（len, first, last, push）
+3. **改進 REPL**（添加歷史記錄、自動完成）
+4. **優化性能**（快取、尾調用優化）
+5. **添加更多語法**（for 循環、while 循環）
+
+你已經建造了一個真正的程式語言解釋器！👏
