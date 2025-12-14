@@ -12,4 +12,9 @@ public interface MonkeyObject {
      * 返回物件的字串表示
      */
     String inspect();
+
+    /**
+     * HashKey 代表雜湊表的鍵
+     */
+    HashKey hashKey();
 }

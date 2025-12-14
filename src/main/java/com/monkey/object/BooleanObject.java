@@ -4,7 +4,7 @@ package com.monkey.object;
  * BooleanObject 代表布林值
  * 使用單例模式節省記憶體
  */
-public class BooleanObject implements MonkeyObject {
+public class BooleanObject implements MonkeyObject , Hashable{
     private final boolean value;
 
     // 單例實例
@@ -34,5 +34,10 @@ public class BooleanObject implements MonkeyObject {
     @Override
     public String inspect() {
         return String.valueOf(value);
+    }
+
+    @Override
+    public HashKey hashKey() {
+        return new HashKey(type(), value ? 1 : 0);
     }
 }

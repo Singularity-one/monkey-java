@@ -11,6 +11,7 @@ public enum TokenType {
     // 識別符號與字面值
     IDENT("IDENT"),      // 變數名、函數名：add, foobar, x, y, ...
     INT("INT"),          // 整數：1343456
+    STRING("STRING"),    // 字串："hello world"
 
     // 運算符
     ASSIGN("="),
@@ -29,11 +30,14 @@ public enum TokenType {
     // 分隔符
     COMMA(","),
     SEMICOLON(";"),
+    COLON(":"),
 
     LPAREN("("),
     RPAREN(")"),
     LBRACE("{"),
     RBRACE("}"),
+    LBRACKET("["),
+    RBRACKET("]"),
 
     // 關鍵字
     FUNCTION("FUNCTION"),

@@ -21,4 +21,9 @@ public class NullObject implements MonkeyObject {
     public String inspect() {
         return "null";
     }
+
+    @Override
+    public HashKey hashKey() {
+        return null;
+    }
 }

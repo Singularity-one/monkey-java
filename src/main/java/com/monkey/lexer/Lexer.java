@@ -83,6 +83,10 @@ public class Lexer {
             case ')' -> tok = new Token(TokenType.RPAREN, ch);
             case '{' -> tok = new Token(TokenType.LBRACE, ch);
             case '}' -> tok = new Token(TokenType.RBRACE, ch);
+            case '[' -> tok = new Token(TokenType.LBRACKET, ch);
+            case ']' -> tok = new Token(TokenType.RBRACKET, ch);
+            case ':' -> tok = new Token(TokenType.COLON, ch);
+            case '"' -> tok = new Token(TokenType.STRING, readString());
             case 0 -> tok = new Token(TokenType.EOF, "");
             default -> {
                 if (isLetter(ch)) {
@@ -147,5 +151,19 @@ public class Lexer {
      */
     private boolean isDigit(char ch) {
         return '0' <= ch && ch <= '9';
+    }
+
+    /**
+     * 讀取字串（處理引號內的內容）
+     */
+    private String readString() {
+        int startPosition = position + 1; // 跳過開頭的 "
+        while (true) {
+            readChar();
+            if (ch == '"' || ch == 0) {
+                break;
+            }
+        }
+        return input.substring(startPosition, position);
     }
 }

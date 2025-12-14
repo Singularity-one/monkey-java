@@ -819,3 +819,370 @@ Environment extendedEnv = newEnclosedEnvironment(fn.getEnv());
 5. **添加更多語法**（for 循環、while 循環）
 
 你已經建造了一個真正的程式語言解釋器！👏
+
+# 第四章：Extending the Interpreter - 快速開始指南
+
+## 🎯 新增特性
+
+### 1. 字串（Strings）
+```monkey
+"Hello World"
+"Hello" + " " + "World"  // "Hello World"
+len("hello")              // 5
+```
+
+### 2. 陣列（Arrays）
+```monkey
+[1, 2, 3, 4]
+[1, 2 * 2, 3 + 3]        // [1, 4, 6]
+let arr = [1, 2, 3]
+arr[0]                    // 1
+arr[1]                    // 2
+```
+
+### 3. 雜湊表（Hash Maps）
+```monkey
+{"name": "John", "age": 30}
+let person = {"name": "John", "age": 30}
+person["name"]            // "John"
+person["age"]             // 30
+
+// 支援多種鍵類型
+{
+    "string": 1,
+    10: 2,
+    true: 3,
+    false: 4
+}
+```
+
+### 4. 內建函數（Built-in Functions）
+
+#### len(obj) - 取得長度
+```monkey
+len("hello")      // 5
+len([1, 2, 3])    // 3
+len([])           // 0
+```
+
+#### first(array) - 取得第一個元素
+```monkey
+first([1, 2, 3])  // 1
+first([])         // null
+```
+
+#### last(array) - 取得最後一個元素
+```monkey
+last([1, 2, 3])   // 3
+last([])          // null
+```
+
+#### rest(array) - 取得除第一個外的所有元素
+```monkey
+rest([1, 2, 3])   // [2, 3]
+rest([1])         // []
+rest([])          // null
+```
+
+#### push(array, element) - 添加元素
+```monkey
+push([1, 2], 3)   // [1, 2, 3]
+push([], 1)       // [1]
+```
+
+#### puts(...) - 打印輸出
+```monkey
+puts("Hello", "World")  // 打印兩行
+puts(1, 2, 3)           // 打印 1 2 3
+```
+
+## 📁 完整檔案列表
+
+新增或修改的文件：
+
+**Token & Lexer:**
+- `TokenType.java` - 新增 STRING, LBRACKET, RBRACKET, COLON
+- `Lexer.java` - 新增 readString() 方法
+
+**AST 節點:**
+- `StringLiteral.java` - 字串字面值
+- `ArrayLiteral.java` - 陣列字面值
+- `IndexExpression.java` - 索引表達式
+- `HashLiteral.java` - 雜湊字面值
+
+**Object 系統:**
+- `ObjectType.java` - 新增 STRING, ARRAY, HASH, BUILTIN
+- `StringObject.java` - 字串物件
+- `ArrayObject.java` - 陣列物件
+- `HashObject.java` - 雜湊物件
+- `BuiltinFunction.java` - 內建函數物件
+- `Hashable.java` - 可雜湊接口
+- `HashKey.java` - 雜湊鍵
+- `IntegerObject.java` - 實現 Hashable
+- `BooleanObject.java` - 實現 Hashable
+
+**Evaluator:**
+- `Evaluator.java` - 擴展支援新類型
+- `Builtins.java` - 定義所有內建函數
+
+**Parser:**
+- `Parser.java` - 新增解析方法
+
+**Tests:**
+- `Chapter4Test.java` - 完整測試
+
+## 🚀 編譯和運行
+
+```bash
+# 編譯
+mvn clean compile
+
+# 運行測試
+mvn test
+
+# 運行 Demo
+mvn exec:java -Dexec.mainClass="com.monkey.Main" -Dexec.args="--demo"
+
+# 啟動 REPL
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+## 🎮 REPL 範例
+
+```monkey
+>> let name = "Alice"
+Alice
+>> let greeting = "Hello, " + name + "!"
+Hello, Alice!
+>> len(greeting)
+13
+
+>> let numbers = [1, 2, 3, 4, 5]
+[1, 2, 3, 4, 5]
+>> first(numbers)
+1
+>> last(numbers)
+5
+>> rest(numbers)
+[2, 3, 4, 5]
+
+>> let person = {"name": "Bob", "age": 25}
+{name: Bob, age: 25}
+>> person["name"]
+Bob
+>> person["age"]
+25
+```
+
+## 📝 進階範例
+
+### 1. Map 函數（高階函數）
+
+```monkey
+let map = fn(arr, f) {
+    let iter = fn(arr, accumulated) {
+        if (len(arr) == 0) {
+            accumulated
+        } else {
+            iter(rest(arr), push(accumulated, f(first(arr))))
+        }
+    };
+    iter(arr, [])
+};
+
+let double = fn(x) { x * 2 };
+map([1, 2, 3, 4], double);  // [2, 4, 6, 8]
+```
+
+### 2. Reduce 函數
+
+```monkey
+let reduce = fn(arr, initial, f) {
+    let iter = fn(arr, result) {
+        if (len(arr) == 0) {
+            result
+        } else {
+            iter(rest(arr), f(result, first(arr)))
+        }
+    };
+    iter(arr, initial)
+};
+
+let sum = fn(arr) {
+    reduce(arr, 0, fn(initial, el) { initial + el })
+};
+
+sum([1, 2, 3, 4, 5]);  // 15
+```
+
+### 3. Filter 函數
+
+```monkey
+let filter = fn(arr, predicate) {
+    let iter = fn(arr, accumulated) {
+        if (len(arr) == 0) {
+            accumulated
+        } else {
+            if (predicate(first(arr))) {
+                iter(rest(arr), push(accumulated, first(arr)))
+            } else {
+                iter(rest(arr), accumulated)
+            }
+        }
+    };
+    iter(arr, [])
+};
+
+let isEven = fn(x) { x - (x / 2 * 2) == 0 };
+filter([1, 2, 3, 4, 5, 6], isEven);  // [2, 4, 6]
+```
+
+### 4. 用雜湊表實現簡單資料庫
+
+```monkey
+let users = [
+    {"id": 1, "name": "Alice", "age": 25},
+    {"id": 2, "name": "Bob", "age": 30},
+    {"id": 3, "name": "Charlie", "age": 35}
+];
+
+let findById = fn(users, id) {
+    let iter = fn(users) {
+        if (len(users) == 0) {
+            null
+        } else {
+            let user = first(users);
+            if (user["id"] == id) {
+                user
+            } else {
+                iter(rest(users))
+            }
+        }
+    };
+    iter(users)
+};
+
+let user = findById(users, 2);
+puts(user["name"]);  // Bob
+puts(user["age"]);   // 30
+```
+
+## 🎯 核心概念
+
+### 1. Hashable 介面
+
+只有實現 `Hashable` 介面的類型才能作為雜湊鍵：
+- IntegerObject
+- BooleanObject
+- StringObject
+
+```java
+public interface Hashable {
+    HashKey hashKey();
+}
+```
+
+### 2. 內建函數系統
+
+內建函數是特殊的物件：
+
+```java
+public class BuiltinFunction implements MonkeyObject {
+    private final BuiltinFn fn;
+    
+    @FunctionalInterface
+    public interface BuiltinFn {
+        MonkeyObject apply(List<MonkeyObject> args);
+    }
+}
+```
+
+### 3. 索引表達式
+
+統一處理陣列和雜湊的索引：
+
+```monkey
+array[index]  // 陣列索引
+hash[key]     // 雜湊鍵查找
+```
+
+## 🔍 實現細節
+
+### 字串連接
+
+使用 `+` 運算符：
+
+```java
+if (left.type() == ObjectType.STRING && right.type() == ObjectType.STRING) {
+    String leftVal = ((StringObject) left).getValue();
+    String rightVal = ((StringObject) right).getValue();
+    return new StringObject(leftVal + rightVal);
+}
+```
+
+### 陣列是不可變的
+
+內建函數返回新陣列而不是修改原陣列：
+
+```monkey
+let a = [1, 2, 3]
+let b = push(a, 4)  // b = [1, 2, 3, 4], a 仍然是 [1, 2, 3]
+```
+
+### 雜湊表使用 HashMap
+
+```java
+Map<HashKey, HashPair> pairs = new HashMap<>();
+```
+
+## 🧪 測試覆蓋
+
+第四章測試：
+
+✅ 字串字面值  
+✅ 字串連接  
+✅ 陣列字面值  
+✅ 陣列索引  
+✅ 雜湊字面值  
+✅ 雜湊索引  
+✅ 內建函數 len  
+✅ 內建函數 first, last, rest, push  
+✅ 內建函數 puts
+
+## 🎉 恭喜！
+
+你現在擁有一個功能豐富的程式語言！
+
+✅ 詞法分析  
+✅ 語法分析  
+✅ 求值  
+✅ 字串  
+✅ 陣列  
+✅ 雜湊表  
+✅ 內建函數  
+✅ 高階函數  
+✅ 閉包
+
+## 🚀 可能的擴展
+
+雖然第四章已經很完整了，你還可以添加：
+
+1. **更多內建函數**
+    - `split(str, delimiter)` - 分割字串
+    - `join(array, separator)` - 連接陣列
+    - `reverse(array)` - 反轉陣列
+
+2. **錯誤處理改進**
+    - 更詳細的錯誤訊息
+    - 堆疊追蹤
+
+3. **性能優化**
+    - 尾調用優化
+    - 常量折疊
+
+4. **新語法特性**
+    - for 迴圈
+    - while 迴圈
+    - break/continue
+
+你已經完成了一個完整的、實用的程式語言解釋器！👏🎊

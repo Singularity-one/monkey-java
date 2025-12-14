@@ -38,6 +38,7 @@ public class Parser {
         PRECEDENCES.put(TokenType.SLASH, PRODUCT);
         PRECEDENCES.put(TokenType.ASTERISK, PRODUCT);
         PRECEDENCES.put(TokenType.LPAREN, CALL);
+        PRECEDENCES.put(TokenType.LBRACKET, CALL);
     }
 
     // 前綴解析函數映射
@@ -55,6 +56,7 @@ public class Parser {
         // 註冊前綴解析函數
         registerPrefix(TokenType.IDENT, v -> parseIdentifier());
         registerPrefix(TokenType.INT, v -> parseIntegerLiteral());
+        registerPrefix(TokenType.STRING, v -> parseStringLiteral());
         registerPrefix(TokenType.BANG, v -> parsePrefixExpression());
         registerPrefix(TokenType.MINUS, v -> parsePrefixExpression());
         registerPrefix(TokenType.TRUE, v -> parseBoolean());
@@ -62,6 +64,8 @@ public class Parser {
         registerPrefix(TokenType.LPAREN, v -> parseGroupedExpression());
         registerPrefix(TokenType.IF, v -> parseIfExpression());
         registerPrefix(TokenType.FUNCTION, v -> parseFunctionLiteral());
+        registerPrefix(TokenType.LBRACKET, v -> parseArrayLiteral());
+        registerPrefix(TokenType.LBRACE, v -> parseHashLiteral());
 
         // 註冊中綴解析函數
         registerInfix(TokenType.PLUS, this::parseInfixExpression);
@@ -73,6 +77,7 @@ public class Parser {
         registerInfix(TokenType.LT, this::parseInfixExpression);
         registerInfix(TokenType.GT, this::parseInfixExpression);
         registerInfix(TokenType.LPAREN, this::parseCallExpression);
+        registerInfix(TokenType.LBRACKET, this::parseIndexExpression);
 
         // 讀取兩個 token，設置 curToken 和 peekToken
         nextToken();
@@ -398,5 +403,85 @@ public class Parser {
         if (!expectPeek(TokenType.RPAREN)) {
             return;
         }
+    }
+
+    private Expression parseStringLiteral() {
+        return new StringLiteral(curToken, curToken.getLiteral());
+    }
+
+    private Expression parseArrayLiteral() {
+        ArrayLiteral array = new ArrayLiteral(curToken);
+
+        List<Expression> elements = parseExpressionList(TokenType.RBRACKET);
+        for (Expression elem : elements) {
+            array.addElement(elem);
+        }
+
+        return array;
+    }
+
+    private List<Expression> parseExpressionList(TokenType end) {
+        List<Expression> list = new ArrayList<>();
+
+        if (peekTokenIs(end)) {
+            nextToken();
+            return list;
+        }
+
+        nextToken();
+        list.add(parseExpression(LOWEST));
+
+        while (peekTokenIs(TokenType.COMMA)) {
+            nextToken();
+            nextToken();
+            list.add(parseExpression(LOWEST));
+        }
+
+        if (!expectPeek(end)) {
+            return null;
+        }
+
+        return list;
+    }
+
+    private Expression parseIndexExpression(Expression left) {
+        IndexExpression exp = new IndexExpression(curToken, left);
+
+        nextToken();
+        exp.setIndex(parseExpression(LOWEST));
+
+        if (!expectPeek(TokenType.RBRACKET)) {
+            return null;
+        }
+
+        return exp;
+    }
+
+    private Expression parseHashLiteral() {
+        HashLiteral hash = new HashLiteral(curToken);
+
+        while (!peekTokenIs(TokenType.RBRACE)) {
+            nextToken();
+            Expression key = parseExpression(LOWEST);
+
+            if (!expectPeek(TokenType.COLON)) {
+                return null;
+            }
+
+            nextToken();
+            Expression value = parseExpression(LOWEST);
+
+            hash.addPair(key, value);
+
+            if (!peekTokenIs(TokenType.RBRACE) && !expectPeek(TokenType.COMMA)) {
+                return null;
+            }
+        }
+
+        if (!expectPeek(TokenType.RBRACE)) {
+            return null;
+        }
+
+        return hash;
     }
 }

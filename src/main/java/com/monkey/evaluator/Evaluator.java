@@ -3,7 +3,9 @@ import com.monkey.ast.*;
 import com.monkey.object.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Evaluator 遍歷 AST 並對其求值
@@ -58,6 +60,34 @@ public class Evaluator {
 
         if (node instanceof BooleanLiteral boolLit) {
             return nativeBoolToBooleanObject(boolLit.getValue());
+        }
+
+        if (node instanceof StringLiteral strLit) {
+            return new StringObject(strLit.getValue());
+        }
+
+        if (node instanceof ArrayLiteral arrLit) {
+            List<MonkeyObject> elements = evalExpressions(arrLit.getElements(), env);
+            if (elements.size() == 1 && isError(elements.get(0))) {
+                return elements.get(0);
+            }
+            return new ArrayObject(elements);
+        }
+
+        if (node instanceof IndexExpression indexExpr) {
+            MonkeyObject left = eval(indexExpr.getLeft(), env);
+            if (isError(left)) {
+                return left;
+            }
+            MonkeyObject index = eval(indexExpr.getIndex(), env);
+            if (isError(index)) {
+                return index;
+            }
+            return evalIndexExpression(left, index);
+        }
+
+        if (node instanceof HashLiteral hashLit) {
+            return evalHashLiteral(hashLit, env);
         }
 
         if (node instanceof PrefixExpression prefix) {
@@ -202,6 +232,11 @@ public class Evaluator {
             return evalIntegerInfixExpression(operator, left, right);
         }
 
+        // 字串連接
+        if (left.type() == ObjectType.STRING && right.type() == ObjectType.STRING) {
+            return evalStringInfixExpression(operator, left, right);
+        }
+
         // 布林運算（使用物件相等性）
         if (operator.equals("==")) {
             return nativeBoolToBooleanObject(left == right);
@@ -216,6 +251,94 @@ public class Evaluator {
         }
 
         return newError("unknown operator: %s %s %s", left.type(), operator, right.type());
+    }
+
+    /**
+     * 求值字串中綴表達式
+     */
+    private static MonkeyObject evalStringInfixExpression(String operator, MonkeyObject left, MonkeyObject right) {
+        if (!operator.equals("+")) {
+            return newError("unknown operator: %s %s %s", left.type(), operator, right.type());
+        }
+
+        String leftVal = ((StringObject) left).getValue();
+        String rightVal = ((StringObject) right).getValue();
+        return new StringObject(leftVal + rightVal);
+    }
+
+    /**
+     * 求值索引表達式
+     */
+    private static MonkeyObject evalIndexExpression(MonkeyObject left, MonkeyObject index) {
+        if (left.type() == ObjectType.ARRAY && index.type() == ObjectType.INTEGER) {
+            return evalArrayIndexExpression(left, index);
+        } else if (left.type() == ObjectType.HASH) {
+            return evalHashIndexExpression(left, index);
+        } else {
+            return newError("index operator not supported: %s", left.type());
+        }
+    }
+
+    /**
+     * 求值陣列索引表達式
+     */
+    private static MonkeyObject evalArrayIndexExpression(MonkeyObject array, MonkeyObject index) {
+        ArrayObject arrayObject = (ArrayObject) array;
+        long idx = ((IntegerObject) index).getValue();
+        int max = arrayObject.getElements().size() - 1;
+
+        if (idx < 0 || idx > max) {
+            return NULL;
+        }
+
+        return arrayObject.getElements().get((int) idx);
+    }
+
+    /**
+     * 求值雜湊索引表達式
+     */
+    private static MonkeyObject evalHashIndexExpression(MonkeyObject hash, MonkeyObject index) {
+        HashObject hashObject = (HashObject) hash;
+
+        HashKey key = index.hashKey();
+        if (key == null) {
+            return newError("unusable as hash key: %s", index.type());
+        }
+
+        HashObject.HashPair pair = hashObject.getPairs().get(key);
+        if (pair == null) {
+            return NULL;
+        }
+
+        return pair.value;
+    }
+
+    /**
+     * 求值雜湊字面值
+     */
+    private static MonkeyObject evalHashLiteral(HashLiteral node, Environment env) {
+        Map<HashKey, HashObject.HashPair> pairs = new HashMap<>();
+
+        for (Map.Entry<Expression, Expression> entry : node.getPairs().entrySet()) {
+            MonkeyObject key = eval(entry.getKey(), env);
+            if (isError(key)) {
+                return key;
+            }
+
+            if (!(key instanceof Hashable)) {
+                return newError("unusable as hash key: %s", key.type());
+            }
+
+            MonkeyObject value = eval(entry.getValue(), env);
+            if (isError(value)) {
+                return value;
+            }
+
+            HashKey hashed = ((Hashable) key).hashKey();
+            pairs.put(hashed, new HashObject.HashPair(key, value));
+        }
+
+        return new HashObject(pairs);
     }
 
     /**
@@ -266,10 +389,17 @@ public class Evaluator {
      */
     private static MonkeyObject evalIdentifier(Identifier node, Environment env) {
         MonkeyObject val = env.get(node.getValue());
-        if (val == null) {
-            return newError("identifier not found: " + node.getValue());
+        if (val != null) {
+            return val;
         }
-        return val;
+
+        // 檢查是否為內建函數
+        BuiltinFunction builtin = Builtins.getBuiltin(node.getValue());
+        if (builtin != null) {
+            return builtin;
+        }
+
+        return newError("identifier not found: " + node.getValue());
     }
 
     /**
@@ -293,13 +423,15 @@ public class Evaluator {
      * 應用函數
      */
     private static MonkeyObject applyFunction(MonkeyObject fn, List<MonkeyObject> args) {
-        if (!(fn instanceof FunctionObject function)) {
+        if (fn instanceof FunctionObject function) {
+            Environment extendedEnv = extendFunctionEnv(function, args);
+            MonkeyObject evaluated = eval(function.getBody(), extendedEnv);
+            return unwrapReturnValue(evaluated);
+        } else if (fn instanceof BuiltinFunction builtin) {
+            return builtin.getFn().apply(args);
+        } else {
             return newError("not a function: %s", fn.type());
         }
-
-        Environment extendedEnv = extendFunctionEnv(function, args);
-        MonkeyObject evaluated = eval(function.getBody(), extendedEnv);
-        return unwrapReturnValue(evaluated);
     }
 
     /**

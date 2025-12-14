@@ -47,4 +47,9 @@ public class FunctionObject implements MonkeyObject {
 
         return "fn(" + params + ") {\n" + body.string() + "\n}";
     }
+
+    @Override
+    public HashKey hashKey() {
+        return null;
+    }
 }

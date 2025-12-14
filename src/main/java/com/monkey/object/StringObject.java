@@ -3,40 +3,40 @@ package com.monkey.object;
 import java.util.Objects;
 
 /**
- * IntegerObject 代表整數值
+ * StringObject 代表字串值
  */
-public class IntegerObject implements MonkeyObject, Hashable {
-    private final long value;
+public class StringObject implements MonkeyObject, Hashable {
+    private final String value;
 
-    public IntegerObject(long value) {
+    public StringObject(String value) {
         this.value = value;
     }
 
-    public long getValue() {
+    public String getValue() {
         return value;
     }
 
     @Override
     public ObjectType type() {
-        return ObjectType.INTEGER;
+        return ObjectType.STRING;
     }
 
     @Override
     public String inspect() {
-        return String.valueOf(value);
+        return value;
     }
 
     @Override
     public HashKey hashKey() {
-        return new HashKey(type(), (int) value);
+        return new HashKey(type(), value.hashCode());
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        IntegerObject that = (IntegerObject) o;
-        return value == that.value;
+        StringObject that = (StringObject) o;
+        return Objects.equals(value, that.value);
     }
 
     @Override

@@ -23,4 +23,9 @@ public class ReturnValue implements MonkeyObject {
     public String inspect() {
         return value.inspect();
     }
+
+    @Override
+    public HashKey hashKey() {
+        return null;
+    }
 }

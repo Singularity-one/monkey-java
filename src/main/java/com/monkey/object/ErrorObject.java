@@ -23,4 +23,9 @@ public class ErrorObject implements MonkeyObject {
     public String inspect() {
         return "ERROR: " + message;
     }
+
+    @Override
+    public HashKey hashKey() {
+        return null;
+    }
 }

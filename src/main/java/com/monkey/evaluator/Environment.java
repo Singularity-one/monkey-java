@@ -1,12 +1,15 @@
 package com.monkey.evaluator;
-import com.monkey.object.MonkeyObject;
+import com.monkey.ast.*;
+import com.monkey.object.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * Environment 用於儲存變數綁定
- * 支援作用域鏈（通過 outer 指向外層環境）
+ * Evaluator 遍歷 AST 並對其求值
+ * 實現 Tree-Walking Interpreter
  */
 public class Environment {
     private final Map<String, MonkeyObject> store;

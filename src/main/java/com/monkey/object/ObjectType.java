@@ -9,7 +9,11 @@ public enum ObjectType {
     NULL("NULL"),
     RETURN_VALUE("RETURN_VALUE"),
     ERROR("ERROR"),
-    FUNCTION("FUNCTION");
+    FUNCTION("FUNCTION"),
+    STRING("STRING"),
+    BUILTIN("BUILTIN"),
+    ARRAY("ARRAY"),
+    HASH("HASH");
 
     private final String value;
 
