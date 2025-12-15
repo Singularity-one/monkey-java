@@ -4,85 +4,42 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Opcode 定義所有字節碼操作碼
+ * Opcode 表示字節碼操作碼
+ * Chapter 2: Hello Bytecode!
+ *
+ * 操作碼是字節碼指令的第一個字節,用於標識指令的類型
  */
 public enum Opcode {
-    // 常量相關
-    OpConstant((byte) 0, "OpConstant", new int[]{2}),  // 載入常量，2字節操作數
+    // Chapter 2 - 基礎指令
+    OP_CONSTANT((byte) 0),  // 載入常量到堆疊
+    OP_ADD((byte) 1),       // 加法運算
+    OP_POP((byte) 2),       // 彈出堆疊頂部元素
 
-    // 算術運算
-    OpAdd((byte) 1, "OpAdd", new int[]{}),
-    OpSub((byte) 2, "OpSub", new int[]{}),
-    OpMul((byte) 3, "OpMul", new int[]{}),
-    OpDiv((byte) 4, "OpDiv", new int[]{}),
+    // Chapter 3 預留 - 更多算術運算
+    OP_SUB((byte) 3),       // 減法運算
+    OP_MUL((byte) 4),       // 乘法運算
+    OP_DIV((byte) 5);       // 除法運算
 
-    // 布林值
-    OpTrue((byte) 5, "OpTrue", new int[]{}),
-    OpFalse((byte) 6, "OpFalse", new int[]{}),
+    private final byte value;
 
-    // 比較運算
-    OpEqual((byte) 7, "OpEqual", new int[]{}),
-    OpNotEqual((byte) 8, "OpNotEqual", new int[]{}),
-    OpGreaterThan((byte) 9, "OpGreaterThan", new int[]{}),
-
-    // 一元運算
-    OpMinus((byte) 10, "OpMinus", new int[]{}),
-    OpBang((byte) 11, "OpBang", new int[]{}),
-
-    // 控制流
-    OpJumpNotTruthy((byte) 12, "OpJumpNotTruthy", new int[]{2}),  // 條件跳轉
-    OpJump((byte) 13, "OpJump", new int[]{2}),                     // 無條件跳轉
-
-    // 空值
-    OpNull((byte) 14, "OpNull", new int[]{}),
-
-    // 堆疊操作
-    OpPop((byte) 15, "OpPop", new int[]{}),
-
-    // 資料結構（第二章新增）
-    OpArray((byte) 16, "OpArray", new int[]{2}),      // 創建陣列，操作數：元素數量
-    OpHash((byte) 17, "OpHash", new int[]{2}),        // 創建雜湊，操作數：元素數量（鍵值對*2）
-    OpIndex((byte) 18, "OpIndex", new int[]{}),       // 索引訪問
-
-    // 全局綁定（第二章新增）
-    OpSetGlobal((byte) 19, "OpSetGlobal", new int[]{2}),  // 設置全局變數
-    OpGetGlobal((byte) 20, "OpGetGlobal", new int[]{2});  // 獲取全局變數
-
-    private final byte code;
-    private final String name;
-    private final int[] operandWidths;  // 每個操作數的字節寬度
-
-    Opcode(byte code, String name, int[] operandWidths) {
-        this.code = code;
-        this.name = name;
-        this.operandWidths = operandWidths;
+    Opcode(byte value) {
+        this.value = value;
     }
 
-    public byte getCode() {
-        return code;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public int[] getOperandWidths() {
-        return operandWidths;
-    }
-
-    // 查找表：從字節碼值查找 Opcode
-    private static final Map<Byte, Opcode> LOOKUP = new HashMap<>();
-
-    static {
-        for (Opcode op : Opcode.values()) {
-            LOOKUP.put(op.code, op);
-        }
+    public byte getValue() {
+        return value;
     }
 
     /**
-     * 從字節碼值查找 Opcode
+     * 從字節值轉換為 Opcode
+     * 用於 VM 的取指階段
      */
-    public static Opcode lookup(byte code) {
-        return LOOKUP.get(code);
+    public static Opcode fromByte(byte b) {
+        for (Opcode op : values()) {
+            if (op.value == b) {
+                return op;
+            }
+        }
+        throw new IllegalArgumentException("Unknown opcode: " + b);
     }
 }

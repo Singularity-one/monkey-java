@@ -1187,119 +1187,380 @@ Map<HashKey, HashPair> pairs = new HashMap<>();
 
 你已經完成了一個完整的、實用的程式語言解釋器！👏🎊
 
-# Writing A Compiler In Java - 第一章快速開始指南
+# Writing A Compiler In Java - 第一章指南
 
-## 🎯 從解釋器到編譯器
+## 📖 第一章：Compilers & Virtual Machines
 
-### 架構對比
+### ⚠️ 重要：第一章是純理論章節
 
-**解釋器（Tree-Walking）：**
+第一章**沒有代碼實現**，只有概念介紹和一個 50 行的 JavaScript 示例來說明 VM 概念。
+
+---
+
+## 🎯 第一章內容概要
+
+### 1. 什麼是編譯器？
+
+**定義：**
+> 編譯器是將一種程式語言（源語言）轉換為另一種程式語言（目標語言）的程式。
+
+**核心概念：**
+- 編譯器是**翻譯器**
+- 實現程式語言的兩種方式：
+   1. **解釋** - 逐行執行
+   2. **編譯** - 翻譯後執行
+
+**編譯器架構：**
 ```
-Source → Lexer → Parser → AST → Evaluator → Result
-                                    ↑
-                              直接執行 AST
-```
-
-**編譯器（Bytecode + VM）：**
-```
-Source → Lexer → Parser → AST → Compiler → Bytecode → VM → Result
-                                              ↓
-                                        優化、快速執行
-```
-
-## 📁 新增的檔案結構
-
-```
-src/
-├── main/
-│   └── java/
-│       └── com/
-│           └── monkey/
-│               ├── code/              # 新增
-│               │   ├── Opcode.java
-│               │   ├── Instructions.java
-│               │   └── Code.java
-│               ├── compiler/          # 新增
-│               │   ├── Compiler.java
-│               │   ├── BytecodeResult.java
-│               │   └── EmittedInstruction.java
-│               └── vm/                # 新增
-│                   └── VM.java
-└── test/
-    └── java/
-        └── com/
-            └── monkey/
-                ├── compiler/
-                │   └── CompilerTest.java
-                └── benchmark/
-                    └── BenchmarkTest.java
+Source Code → Lexer → Parser → AST
+                                 ↓
+                            Optimizer (可選)
+                                 ↓
+                            Code Generator
+                                 ↓
+                            Target Code
 ```
 
-## 🎓 核心概念
+---
 
-### 1. 字節碼（Bytecode）
+### 2. 真實機器如何工作？
 
-字節碼是介於高級語言和機器碼之間的中間表示：
+**Von Neumann 架構：**
 
+基本組件：
+- **CPU** - 中央處理器
+   - ALU（算術邏輯單元）
+   - 寄存器（Registers）
+   - 控制單元
+- **記憶體（Memory/RAM）**
+- **輸入/輸出設備**
+
+**Fetch-Decode-Execute 循環：**
 ```
-高級語言:   1 + 2
-AST:        InfixExpression(1, +, 2)
-字節碼:     OpConstant 0    # 載入常量 1
-            OpConstant 1    # 載入常量 2
-            OpAdd           # 執行加法
-```
-
-### 2. 指令集（Instruction Set）
-
-我們的虛擬機支援以下指令：
-
-| 指令 | 操作數 | 說明 |
-|------|--------|------|
-| OpConstant | 2 bytes | 載入常量 |
-| OpAdd | - | 加法 |
-| OpSub | - | 減法 |
-| OpMul | - | 乘法 |
-| OpDiv | - | 除法 |
-| OpTrue | - | 載入 true |
-| OpFalse | - | 載入 false |
-| OpEqual | - | 相等比較 |
-| OpNotEqual | - | 不等比較 |
-| OpGreaterThan | - | 大於比較 |
-| OpMinus | - | 取負 |
-| OpBang | - | 邏輯非 |
-| OpJumpNotTruthy | 2 bytes | 條件跳轉 |
-| OpJump | 2 bytes | 無條件跳轉 |
-| OpNull | - | 載入 null |
-| OpPop | - | 彈出堆疊 |
-
-### 3. 堆疊機（Stack Machine）
-
-VM 使用堆疊來存儲中間結果：
-
-```
-指令序列:
-OpConstant 0    # 堆疊: [1]
-OpConstant 1    # 堆疊: [1, 2]
-OpAdd           # 堆疊: [3]
+1. Fetch（取指令）   - 從記憶體取得指令
+2. Decode（解碼）    - 識別要執行什麼操作
+3. Execute（執行）   - 執行指令
+4. 回到步驟 1
 ```
 
-### 4. 常量池（Constant Pool）
+---
 
-編譯時收集所有常量：
+### 3. 記憶體和堆疊
 
+**記憶體地址：**
+- CPU 使用**數字**作為地址訪問記憶體
+- 類似陣列索引的概念
+- 每個位置稱為一個「字（Word）」
+
+**堆疊（The Stack）：**
+```
+特性：
+- LIFO（後進先出）
+- 用於實現調用堆疊（Call Stack）
+- 儲存：
+  * 返回地址（Return Address）
+  * 函數參數
+  * 局部變數
+```
+
+**寄存器（Registers）：**
+- CPU 內部的高速存儲
+- 數量少但訪問極快
+- 常用寄存器：
+   * **堆疊指針（Stack Pointer）** - 指向堆疊頂部
+   * 通用寄存器 - 存儲計算結果
+
+---
+
+### 4. 什麼是虛擬機？
+
+**定義：**
+> 虛擬機是用軟體建造的電腦，模擬真實電腦的行為。
+
+**虛擬機的組成：**
 ```java
-Constants: [
-    0: IntegerObject(1),
-    1: IntegerObject(2),
-    2: IntegerObject(3)
-]
+// 概念示例（來自書中 JavaScript）
+{
+    programCounter: 0,      // 程式計數器
+    stack: [],              // 堆疊
+    stackPointer: 0,        // 堆疊指針
+    instructions: [...]     // 指令序列
+}
 ```
 
-## 🚀 編譯和運行
+**執行循環：**
+```javascript
+while (programCounter < program.length) {
+    instruction = program[programCounter];
+    // Fetch
+    
+    decode(instruction);
+    // Decode
+    
+    execute(instruction);
+    // Execute
+    
+    programCounter++;
+}
+```
 
-### 1. 編譯專案
+---
+
+### 5. 堆疊機 vs 寄存器機
+
+**堆疊機（Stack Machine）：**
+- ✅ 更簡單易建
+- ✅ 指令更簡單
+- ❌ 需要更多指令
+- 📝 我們將建造堆疊機
+
+**寄存器機（Register Machine）：**
+- ✅ 指令更少更密集
+- ✅ 可能更快
+- ❌ 更複雜
+- ❌ 編譯器更難寫
+
+---
+
+### 6. 什麼是字節碼？
+
+**定義：**
+> 字節碼是虛擬機執行的指令序列，由操作碼（Opcode）和操作數（Operands）組成。
+
+**字節碼結構：**
+```
+[Opcode: 1 byte] [Operand 1] [Operand 2] ...
+```
+
+**示例（概念性）：**
+```
+表達式: (3 + 4) - 5
+
+字節碼:
+PUSH 3      # 壓入 3
+PUSH 4      # 壓入 4
+ADD         # 加法
+PUSH 5      # 壓入 5
+MINUS       # 減法
+```
+
+**特性：**
+- **操作碼** - 1 字節寬
+- **操作數** - 可變寬度
+- **助記符** - 如 PUSH、ADD（人類可讀）
+- **二進制** - 實際是數字（0, 1, 2...）
+
+---
+
+### 7. 為什麼要建造虛擬機？
+
+**原因 1：可移植性**
+```
+一次編譯 → 到處運行
+不需要為每個架構重寫編譯器
+```
+
+**原因 2：領域特定性**
+```
+自定義指令集
+只包含需要的功能
+去除不需要的複雜性
+更快！
+```
+
+**原因 3：優化機會**
+```
+專門針對源語言優化
+自定義字節碼格式
+更緊湊的指令
+```
+
+---
+
+### 8. 書中的 JavaScript 示例
+
+這是第一章唯一的代碼示例，用於說明概念：
+
+```javascript
+let virtualMachine = function(program) {
+    let programCounter = 0;
+    let stack = [];
+    let stackPointer = 0;
+    
+    while (programCounter < program.length) {
+        let instruction = program[programCounter];
+        
+        switch (instruction) {
+            case PUSH:
+                stack[stackPointer] = program[programCounter+1];
+                stackPointer++;
+                programCounter++;
+                break;
+            case ADD:
+                right = stack[stackPointer-1];
+                stackPointer--;
+                left = stack[stackPointer-1];
+                stackPointer--;
+                stack[stackPointer] = left + right;
+                stackPointer++;
+                break;
+            case MINUS:
+                right = stack[stackPointer-1];
+                stackPointer--;
+                left = stack[stackPointer-1];
+                stackPointer--;
+                stack[stackPointer] = left - right;
+                stackPointer++;
+                break;
+        }
+        programCounter++;
+    }
+    
+    console.log("stacktop:", stack[stackPointer-1]);
+}
+```
+
+**執行示例：**
+```javascript
+let program = [
+    PUSH, 3,
+    PUSH, 4,
+    ADD,
+    PUSH, 5,
+    MINUS
+];
+
+virtualMachine(program);  // 輸出: stacktop: 2
+// 計算: (3 + 4) - 5 = 2
+```
+
+---
+
+### 9. 我們的計劃
+
+**同時建造編譯器和虛擬機：**
+
+```
+為什麼？
+- 先建編譯器：不知道 VM 如何執行
+- 先建 VM：不知道要執行什麼
+
+解決方案：
+- 從小開始
+- 逐步建造
+- 立即看到結果
+- 快速反饋
+```
+
+**建造順序：**
+```
+1. 定義簡單的字節碼指令
+2. 建造小型編譯器
+3. 建造小型 VM
+4. 測試整個系統
+5. 逐步添加功能
+```
+
+---
+
+## 🎓 關鍵要點
+
+### 編譯器
+- ✅ 翻譯器，不一定生成機器碼
+- ✅ 可以有多種目標語言
+- ✅ 可以有優化階段
+
+### 虛擬機
+- ✅ 軟體模擬的電腦
+- ✅ 執行字節碼
+- ✅ 領域特定
+
+### 真實機器
+- ✅ Fetch-Decode-Execute 循環
+- ✅ 記憶體使用數字地址
+- ✅ 堆疊用於調用管理
+- ✅ 寄存器提供快速存取
+
+### 字節碼
+- ✅ 虛擬機的機器語言
+- ✅ 操作碼 + 操作數
+- ✅ 可以定制化
+- ✅ 比真實機器碼簡單
+
+---
+
+## 📚 第一章總結
+
+**沒有代碼實現！**
+
+第一章是純理論：
+- 理解編譯器概念
+- 理解虛擬機原理
+- 理解計算機架構基礎
+- 為實際建造做準備
+
+**下一章：**
+
+第二章「Hello Bytecode!」才開始實際編寫代碼：
+- 定義第一個操作碼
+- 建造最小編譯器
+- 建造基礎虛擬機
+- 編譯和執行 `1 + 2`
+
+---
+
+## 🎯 學習建議
+
+1. **仔細閱讀第一章** - 理解概念很重要
+2. **理解堆疊機制** - 這是核心
+3. **理解 Fetch-Decode-Execute** - VM 的心跳
+4. **準備好開始編碼** - 第二章開始動手！
+
+讓我們進入第二章，開始真正的建造！🚀
+
+# Writing A Compiler In Java - Chapter 2: Hello Bytecode!
+
+## 🎯 本章目標
+
+**成功編譯並執行 `1 + 2` = `3`** ✅
+
+在第二章中,我們實現了:
+
+1. ✅ 定義字節碼指令格式 (Opcode + Instructions)
+2. ✅ 構建最小可用的編譯器 (Compiler)
+3. ✅ 實現棧式虛擬機 (VM)
+4. ✅ 完整的測試套件
+5. ✅ 集成到 REPL
+
+## 📁 項目結構
+
+```
+src/main/java/com/monkey/
+├── code/                          # 新增 - 字節碼定義
+│   ├── Opcode.java               # 操作碼枚舉
+│   └── Instructions.java         # 指令集和工具函數
+├── compiler/                      # 新增 - 編譯器
+│   ├── Compiler.java             # 編譯器主類
+│   └── Bytecode.java             # 編譯結果
+├── vm/                            # 新增 - 虛擬機
+│   └── VM.java                   # 棧式虛擬機
+└── Main.java                      # 更新 - 整合編譯器
+
+src/test/java/com/monkey/
+├── code/
+│   └── InstructionsTest.java    # 字節碼測試
+├── compiler/
+│   └── CompilerTest.java         # 編譯器測試
+└── vm/
+    └── VMTest.java               # 虛擬機測試
+```
+
+## 🚀 快速開始
+
+### 1. 編譯項目
 
 ```bash
+cd monkey-java
 mvn clean compile
 ```
 
@@ -1309,243 +1570,486 @@ mvn clean compile
 mvn test
 ```
 
-你應該看到：
+你應該看到:
+
 ```
-[INFO] Tests run: 4, Failures: 0  (CompilerTest)
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.monkey.code.InstructionsTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.monkey.compiler.CompilerTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.monkey.vm.VMTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
 ```
 
-### 3. 運行性能測試
+### 3. 運行 Demo
 
 ```bash
-mvn exec:java -Dexec.mainClass="com.monkey.benchmark.BenchmarkTest"
+mvn exec:java -Dexec.mainClass="com.monkey.Main" -Dexec.args="--demo"
+```
+
+輸出示例:
+
+```
+=== Monkey Compiler & VM Demo ===
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Input: 1 + 2
+
+Constants:
+  0: 1
+  1: 2
+
+Instructions:
+0000 OpConstant 0
+0003 OpConstant 1
+0006 OpAdd
+
+Result: 3
+```
+
+### 4. 啟動 REPL
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+或打包後運行:
+
+```bash
+mvn package
+java -jar target/monkey-java-1.0-SNAPSHOT.jar
+```
+
+## 💻 使用 REPL
+
+```
+Hello! This is the Monkey programming language!
+Feel free to type in commands
+              __,__
+     .--.  .-"     "-.  .--.
+    / .. \/  .-. .-.  \/ .. \
+   | |  '|  /   Y   \  |'  | |
+   | \   \  \ 0 | 0 /  /   / |
+    \ '- ,\.-"`` ``"-./, -' /
+     `'-' /_   ^ ^   _\ '-'`
+         |  \._   _./  |
+         \   \ `~` /   /
+          '._ '-=-' _.'
+             '~---~'
+
+Mode: Compiler
+
+>> 1
+1
+>> 2
+2
+>> 1 + 2
+3
+>> 5 * 10
+50
+>> (5 + 10) * 2
+30
+>> exit
+Goodbye!
+```
+
+## 📚 核心概念詳解
+
+### 1. 字節碼格式
+
+每條指令由操作碼和可選的操作數組成:
+
+```
+指令格式:
+[OpCode: 1 byte][Operand 1][Operand 2]...
+
+OpConstant:  [0x00][Index: 2 bytes]
+OpAdd:       [0x01]
+OpSub:       [0x03]
+OpMul:       [0x04]
+OpDiv:       [0x05]
+```
+
+### 2. 編譯流程
+
+```
+源代碼 → Lexer → Parser → AST → Compiler → Bytecode → VM → 結果
+```
+
+**示例: `1 + 2`**
+
+```
+1. 源代碼:
+   "1 + 2"
+
+2. AST:
+   Program
+     ExpressionStatement
+       InfixExpression(+)
+         Left: IntegerLiteral(1)
+         Right: IntegerLiteral(2)
+
+3. 編譯:
+   Constants: [Integer(1), Integer(2)]
+   Instructions:
+     0000 OpConstant 0  ; 載入 1
+     0003 OpConstant 1  ; 載入 2
+     0006 OpAdd         ; 執行加法
+
+4. 執行:
+   stack: []
+   → OpConstant 0 → stack: [1]
+   → OpConstant 1 → stack: [1, 2]
+   → OpAdd        → stack: [3]
+
+5. 結果: 3
+```
+
+### 3. 堆疊機執行
+
+VM 使用堆疊來存儲中間值:
+
+```java
+// 堆疊指針約定
+private int sp = 0;  // 始終指向下一個空閒位置
+
+// 堆疊頂部在 stack[sp-1]
+public MonkeyObject stackTop() {
+    if (sp == 0) return null;
+    return stack[sp - 1];
+}
+
+// Push: 先存儲,再遞增
+private void push(MonkeyObject obj) {
+    stack[sp] = obj;
+    sp++;
+}
+
+// Pop: 先遞減,再讀取
+private MonkeyObject pop() {
+    sp--;
+    return stack[sp];
+}
+```
+
+### 4. 大端序編碼
+
+操作數使用大端序(Big-Endian):
+
+```java
+// 編碼 65534 → [0xFF, 0xFE]
+private static void putUint16(byte[] arr, int offset, int value) {
+    arr[offset]     = (byte) ((value >> 8) & 0xFF);  // 高字節
+    arr[offset + 1] = (byte) (value & 0xFF);         // 低字節
+}
+
+// 解碼 [0xFF, 0xFE] → 65534
+public static int readUint16(byte[] ins) {
+    return ((ins[0] & 0xFF) << 8) | (ins[1] & 0xFF);
+}
+```
+
+## 🔍 代碼走讀
+
+### Instructions.make() - 創建字節碼
+
+```java
+// 創建 OpConstant 指令
+byte[] ins = Instructions.make(Opcode.OP_CONSTANT, 65534);
+// 結果: [0x00, 0xFF, 0xFE]
+//       ^^^^  ^^^^^^^^^^^
+//       操作碼  操作數(索引)
+
+// 創建 OpAdd 指令
+byte[] ins = Instructions.make(Opcode.OP_ADD);
+// 結果: [0x01]
+//       ^^^^
+//       操作碼
+```
+
+### Compiler.compile() - 編譯邏輯
+
+```java
+// 編譯整數字面量
+if (node instanceof IntegerLiteral) {
+    IntegerLiteral intLit = (IntegerLiteral) node;
+    // 1. 創建對象
+    IntegerObject integer = new IntegerObject(intLit.getValue());
+    // 2. 添加到常量池
+    int index = addConstant(integer);
+    // 3. 發射 OpConstant 指令
+    emit(Opcode.OP_CONSTANT, index);
+}
+
+// 編譯中綴表達式
+if (node instanceof InfixExpression) {
+    InfixExpression infix = (InfixExpression) node;
+    // 1. 編譯左操作數
+    compile(infix.getLeft());
+    // 2. 編譯右操作數
+    compile(infix.getRight());
+    // 3. 發射運算符指令
+    switch (infix.getOperator()) {
+        case "+": emit(Opcode.OP_ADD); break;
+        case "-": emit(Opcode.OP_SUB); break;
+        case "*": emit(Opcode.OP_MUL); break;
+        case "/": emit(Opcode.OP_DIV); break;
+    }
+}
+```
+
+### VM.run() - 執行循環
+
+```java
+public void run() throws VMException {
+    for (int ip = 0; ip < instructions.size(); ip++) {
+        // 取指
+        Opcode op = Opcode.fromByte(instructions.get(ip));
+
+        switch (op) {
+            case OP_CONSTANT:
+                // 解碼
+                int index = readUint16(instructions, ip + 1);
+                ip += 2;
+                // 執行
+                push(constants.get(index));
+                break;
+
+            case OP_ADD:
+                // 執行
+                MonkeyObject right = pop();
+                MonkeyObject left = pop();
+                long result = 
+                    ((IntegerObject)left).getValue() + 
+                    ((IntegerObject)right).getValue();
+                push(new IntegerObject(result));
+                break;
+        }
+    }
+}
 ```
 
 ## 📊 性能對比
 
-典型的性能提升：
+雖然功能還很簡單,但已經可以看到編譯器的優勢:
 
+### 解釋器執行 `1 + 2`:
 ```
-Test: 1 + 2 + 3 + 4 + 5
-Interpreter: 1,234,567 ns
-Compiler:      456,789 ns
-Speedup:     2.70x faster ✅
+1. 遍歷 AST 找到 InfixExpression
+2. 遞歸 Eval(left) → Integer(1)
+3. 遞歸 Eval(right) → Integer(2)
+4. 執行加法
+5. 返回結果
 
-Test: (1 + 2) * (3 + 4) * (5 + 6)
-Interpreter: 2,345,678 ns
-Compiler:      789,012 ns
-Speedup:     2.97x faster ✅
-```
-
-## 🔍 詳細示例
-
-### 示例 1: 簡單加法
-
-**源代碼：**
-```monkey
-1 + 2
+開銷: AST 遍歷 + 多次方法調用
 ```
 
-**編譯結果：**
+### 編譯器執行 `1 + 2`:
 ```
-Constants:
-  0: 1
-  1: 2
+1. OpConstant 0  → 直接索引載入
+2. OpConstant 1  → 直接索引載入
+3. OpAdd         → 直接運算
 
-Instructions:
-0000 OpConstant 0    # 載入 1
-0003 OpConstant 1    # 載入 2
-0006 OpAdd           # 執行加法
-0007 OpPop           # 彈出結果
+開銷: 幾乎沒有
 ```
 
-**VM 執行過程：**
-```
-1. OpConstant 0  → stack: [1]
-2. OpConstant 1  → stack: [1, 2]
-3. OpAdd         → stack: [3]
-4. OpPop         → stack: []
-   結果: 3
-```
+**編譯器的優勢:**
+- ✅ 沒有 AST 遍歷
+- ✅ 沒有遞歸調用
+- ✅ 直接的堆疊操作
+- ✅ 更好的局部性
 
-### 示例 2: 條件表達式
+## 🧪 測試詳解
 
-**源代碼：**
-```monkey
-if (1 < 2) { 10 } else { 20 }
-```
-
-**編譯結果：**
-```
-Constants:
-  0: 1
-  1: 2
-  2: 10
-  3: 20
-
-Instructions:
-0000 OpConstant 0           # 載入 1
-0003 OpConstant 1           # 載入 2
-0006 OpGreaterThan          # 2 > 1 (我們轉換了 <)
-0007 OpJumpNotTruthy 0016   # 如果假則跳到 0016
-0010 OpConstant 2           # consequence: 載入 10
-0013 OpJump 0019            # 跳過 alternative
-0016 OpConstant 3           # alternative: 載入 20
-0019 OpPop
-```
-
-### 示例 3: 複雜運算
-
-**源代碼：**
-```monkey
-(1 + 2) * (3 + 4)
-```
-
-**編譯結果：**
-```
-Constants:
-  0: 1
-  1: 2
-  2: 3
-  3: 4
-
-Instructions:
-0000 OpConstant 0    # 1
-0003 OpConstant 1    # 2
-0006 OpAdd           # 1 + 2 = 3
-0007 OpConstant 2    # 3
-0010 OpConstant 3    # 4
-0013 OpAdd           # 3 + 4 = 7
-0014 OpMul           # 3 * 7 = 21
-0015 OpPop
-```
-
-## 🎯 編譯器 vs 解釋器
-
-### 優勢
-
-**編譯器優勢：**
-- ⚡ **更快** - 不需要重複遍歷 AST
-- 🎯 **優化** - 可以進行字節碼優化
-- 💾 **緩存** - 字節碼可以保存重用
-
-**解釋器優勢：**
-- 🚀 **簡單** - 實現更簡單
-- 🐛 **調試** - 更容易調試
-- 🔄 **靈活** - 更容易添加新特性
-
-### 適用場景
-
-**使用編譯器：**
-- 需要高性能
-- 運行次數多
-- 部署環境穩定
-
-**使用解釋器：**
-- 快速原型
-- 交互式環境（REPL）
-- 動態特性多
-
-## 🧪 測試覆蓋
-
-第一章實現了以下測試：
-
-✅ 整數算術運算  
-✅ 布林表達式  
-✅ 比較運算  
-✅ 前綴運算（!, -）  
-✅ 條件表達式（if/else）  
-✅ 指令生成  
-✅ 指令格式化  
-✅ VM 執行
-
-## 💡 實現細節
-
-### 1. 字節碼格式
-
-每條指令由操作碼和可選的操作數組成：
-
-```
-OpConstant: [OpCode:1byte][Index:2bytes]
-OpAdd:      [OpCode:1byte]
-```
-
-### 2. 大端序（Big-Endian）
-
-我們使用大端序存儲多字節數據：
+### Instructions 測試
 
 ```java
-// 存儲 65534 (0xFFFE)
-bytes[0] = 0xFF;  // 高字節
-bytes[1] = 0xFE;  // 低字節
+@Test
+public void testMake() {
+    // 測試 OpConstant 指令生成
+    byte[] ins = Instructions.make(Opcode.OP_CONSTANT, 65534);
+    // 期望: [0x00, 0xFF, 0xFE]
+    assertArrayEquals(
+        new byte[]{0, (byte)255, (byte)254}, 
+        ins
+    );
+}
+
+@Test
+public void testInstructionsString() {
+    // 測試反彙編
+    Instructions ins = new Instructions();
+    ins.append(Instructions.make(Opcode.OP_ADD));
+    ins.append(Instructions.make(Opcode.OP_CONSTANT, 2));
+    
+    String expected = 
+        "0000 OpAdd\n" +
+        "0001 OpConstant 2\n";
+    
+    assertEquals(expected, ins.toString());
+}
 ```
 
-### 3. 回填（Backpatching）
-
-條件跳轉需要回填地址：
+### Compiler 測試
 
 ```java
-// 1. 發出跳轉指令（地址未知）
-int jumpPos = emit(OpJumpNotTruthy, 9999);
-
-// 2. 編譯 consequence
-
-// 3. 回填跳轉地址
-changeOperand(jumpPos, instructions.size());
+@Test
+public void testIntegerArithmetic() {
+    CompilerTestCase test = new CompilerTestCase(
+        "1 + 2",
+        new Object[]{1, 2},  // 常量池
+        new byte[][]{
+            Instructions.make(Opcode.OP_CONSTANT, 0),
+            Instructions.make(Opcode.OP_CONSTANT, 1),
+            Instructions.make(Opcode.OP_ADD)
+        }
+    );
+    runCompilerTests(new CompilerTestCase[]{test});
+}
 ```
 
-### 4. 堆疊管理
-
-VM 使用固定大小的堆疊：
+### VM 測試
 
 ```java
-private static final int STACK_SIZE = 2048;
-private final MonkeyObject[] stack = new MonkeyObject[STACK_SIZE];
-private int sp = 0;  // 堆疊指針
+@Test
+public void testIntegerArithmetic() {
+    VMTestCase[] tests = {
+        new VMTestCase("1", 1),
+        new VMTestCase("2", 2),
+        new VMTestCase("1 + 2", 3),
+        new VMTestCase("2 * (5 + 10)", 30)
+    };
+    runVMTests(tests);
+}
 ```
 
-## 🎉 完成第一章！
+## 💡 關鍵設計決策
 
-你現在擁有：
+### 1. 為什麼選擇堆疊機?
 
-✅ **完整的字節碼系統**  
-✅ **功能完整的編譯器**  
-✅ **堆疊式虛擬機**  
-✅ **性能測試框架**
+**優點:**
+- ✅ 實現簡單
+- ✅ 概念清晰
+- ✅ 指令集小
+- ✅ 易於理解和調試
 
-編譯器比解釋器快 **2-3 倍**！
+**缺點:**
+- ❌ 比寄存器機稍慢
+- ❌ 需要更多 push/pop
 
-## 📚 下一步
+**選擇理由:**
+對於學習來說,簡單和清晰比性能更重要!
 
-第一章只是開始，後續章節會添加：
+### 2. 為什麼使用常量池?
 
-1. **第二章** - 字串、陣列、雜湊表
-2. **第三章** - 函數和閉包
-3. **第四章** - 內建函數
-4. **第五章** - 優化
+**沒有常量池:**
+```
+OpPush 1      // 需要編碼整數到指令中
+OpPush 2
+OpAdd
+```
+
+**使用常量池:**
+```
+OpConstant 0  // 只需 2 字節索引
+OpConstant 1
+OpAdd
+
+Constants: [Integer(1), Integer(2)]
+```
+
+**優點:**
+- ✅ 指令更短
+- ✅ 支持複雜對象 (字符串、函數)
+- ✅ 常量可以共享
+- ✅ 易於優化
+
+### 3. 為什麼用大端序?
+
+```
+65534 大端序: [0xFF, 0xFE]  ← 高字節在前
+65534 小端序: [0xFE, 0xFF]  ← 低字節在前
+```
+
+**選擇大端序:**
+- ✅ 更直觀 (符合人類閱讀)
+- ✅ 網絡字節序標準
+- ✅ 調試時更容易識別
+- ✅ 書中使用的格式
+
+## 🎯 學到了什麼?
+
+### 編譯器基礎
+
+1. **字節碼設計** - 操作碼 + 操作數
+2. **指令編碼** - 如何將指令序列化為字節
+3. **常量池** - 管理編譯時常量
+4. **代碼生成** - 從 AST 到字節碼
+
+### 虛擬機基礎
+
+1. **取指-解碼-執行循環** - VM 的核心
+2. **堆疊管理** - push/pop 操作
+3. **指令執行** - 實現具體的操作
+4. **錯誤處理** - 堆疊溢出、除零錯誤
+
+### 軟件工程
+
+1. **模塊化設計** - 清晰的職責分離
+2. **測試驅動** - 先寫測試再實現
+3. **可調試性** - 反彙編工具
+4. **漸進式開發** - 從簡單到複雜
+
+## 🎉 完成第二章!
+
+你現在擁有:
+
+✅ **完整的字節碼系統** - Opcode + Instructions  
+✅ **功能編譯器** - AST → Bytecode  
+✅ **堆疊虛擬機** - Fetch-Decode-Execute  
+✅ **測試套件** - 全面的測試覆蓋  
+✅ **可用的 REPL** - 編譯器和解釋器雙模式  
+✅ **調試工具** - 反彙編輸出
+
+## 📚 下一步: Chapter 3
+
+第三章將添加:
+
+- **更多運算符** - 比較運算 (<, >, ==, !=)
+- **布爾值** - true/false
+- **前綴運算符** - !, -
+- **OpPop 指令** - 清理堆疊
+- **更複雜的表達式**
 
 ## 🔧 常見問題
 
-### Q: 為什麼要用堆疊機？
+### Q: 為什麼 `1 + 2` 需要 3 條指令?
 
-A: 堆疊機簡單、高效，大多數虛擬機（JVM、Python、.NET）都採用這種設計。
+A: 因為堆疊機架構需要:
+1. 將 1 推入堆疊
+2. 將 2 推入堆疊
+3. 彈出兩個數並相加
 
-### Q: 字節碼可以保存嗎？
+### Q: 常量池索引為什麼用 2 字節?
 
-A: 可以！你可以將字節碼序列化保存，下次直接載入執行。
+A: 2 字節 = 65536 個常量。足夠大多數程序使用。如果需要更多,可以擴展為 4 字節。
 
-### Q: 如何添加新指令？
+### Q: 可以添加新的運算符嗎?
 
-1. 在 `Opcode` 添加新的操作碼
-2. 在 `Compiler` 中生成該指令
-3. 在 `VM` 中實現執行邏輯
+A: 當然!步驟:
+1. 在 `Opcode` 添加新操作碼
+2. 在 `Instructions.DEFINITIONS` 添加定義
+3. 在 `Compiler` 中生成指令
+4. 在 `VM` 中實現執行
 
-### Q: 可以進一步優化嗎？
+### Q: 編譯器比解釋器快多少?
 
-可以！常見優化包括：
-- 常量折疊
-- 死代碼消除
-- 尾調用優化
-- JIT 編譯
+A: 對於簡單運算,大約快 2-3 倍。隨著代碼複雜度增加,差距會更大。
 
-繼續加油！你正在建造一個真正的編譯器！🚀
+**繼續加油!你正在構建一個真正的編譯器!** 🚀

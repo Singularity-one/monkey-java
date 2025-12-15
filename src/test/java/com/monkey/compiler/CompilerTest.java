@@ -1,194 +1,214 @@
 package com.monkey.compiler;
 
 import com.monkey.ast.Program;
-import com.monkey.code.*;
+import com.monkey.code.Instructions;
+import com.monkey.code.Opcode;
 import com.monkey.lexer.Lexer;
-import com.monkey.object.*;
+import com.monkey.object.IntegerObject;
+import com.monkey.object.MonkeyObject;
 import com.monkey.parser.Parser;
-import com.monkey.vm.VM;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
+
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 編譯器和 VM 測試
+ * 編譯器測試
+ * Chapter 2: Hello Bytecode!
  */
 public class CompilerTest {
 
+    /**
+     * 測試整數算術運算編譯
+     *
+     * 這是第二章的核心測試!
+     * 我們要確保 "1 + 2" 能正確編譯為字節碼
+     */
     @Test
-    public void testIntegerArithmetic() throws Exception {
-        Object[][] tests = {
-                {"1", 1L},
-                {"2", 2L},
-                {"1 + 2", 3L},
-                {"1 - 2", -1L},
-                {"1 * 2", 2L},
-                {"4 / 2", 2L},
-                {"50 / 2 * 2 + 10 - 5", 55L},
-                {"5 + 5 + 5 + 5 - 10", 10L},
-                {"2 * 2 * 2 * 2 * 2", 32L},
-                {"5 * 2 + 10", 20L},
-                {"5 + 2 * 10", 25L},
-                {"5 * (2 + 10)", 60L},
-                {"-5", -5L},
-                {"-10", -10L},
-                {"-50 + 100 + -50", 0L}
+    public void testIntegerArithmetic() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                // 測試 "1 + 2"
+                //
+                // AST:
+                //   InfixExpression(+)
+                //     Left: IntegerLiteral(1)
+                //     Right: IntegerLiteral(2)
+                //
+                // 字節碼:
+                //   OpConstant 0  ; 載入常量 1
+                //   OpConstant 1  ; 載入常量 2
+                //   OpAdd         ; 執行加法
+                new CompilerTestCase(
+                        "1 + 2",
+                        new Object[]{1, 2},          // 常量池: [1, 2]
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_ADD)
+                        }
+                ),
+
+                // 測試 "1; 2"
+                // 兩個表達式語句
+                new CompilerTestCase(
+                        "1; 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1)
+                        }
+                ),
+
+                // 測試 "1 - 2"
+                new CompilerTestCase(
+                        "1 - 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_SUB)
+                        }
+                ),
+
+                // 測試 "1 * 2"
+                new CompilerTestCase(
+                        "1 * 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_MUL)
+                        }
+                ),
+
+                // 測試 "2 / 1"
+                new CompilerTestCase(
+                        "2 / 1",
+                        new Object[]{2, 1},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_DIV)
+                        }
+                )
         };
 
-        runVmTests(tests);
+        runCompilerTests(tests);
     }
 
-    @Test
-    public void testBooleanExpressions() throws Exception {
-        Object[][] tests = {
-                {"true", true},
-                {"false", false},
-                {"1 < 2", true},
-                {"1 > 2", false},
-                {"1 < 1", false},
-                {"1 > 1", false},
-                {"1 == 1", true},
-                {"1 != 1", false},
-                {"1 == 2", false},
-                {"1 != 2", true},
-                {"true == true", true},
-                {"false == false", true},
-                {"true == false", false},
-                {"true != false", true},
-                {"false != true", true},
-                {"(1 < 2) == true", true},
-                {"(1 < 2) == false", false},
-                {"(1 > 2) == true", false},
-                {"(1 > 2) == false", true},
-                {"!true", false},
-                {"!false", true},
-                {"!5", false},
-                {"!!true", true},
-                {"!!false", false},
-                {"!!5", true}
-        };
+    /**
+     * 運行編譯器測試用例
+     */
+    private void runCompilerTests(CompilerTestCase[] tests) {
+        for (CompilerTestCase tt : tests) {
+            // 1. 解析源代碼
+            Program program = parse(tt.input);
 
-        runVmTests(tests);
-    }
-
-    @Test
-    public void testConditionals() throws Exception {
-        Object[][] tests = {
-                {"if (true) { 10 }", 10L},
-                {"if (true) { 10 } else { 20 }", 10L},
-                {"if (false) { 10 } else { 20 }", 20L},
-                {"if (1) { 10 }", 10L},
-                {"if (1 < 2) { 10 }", 10L},
-                {"if (1 < 2) { 10 } else { 20 }", 10L},
-                {"if (1 > 2) { 10 } else { 20 }", 20L},
-                {"if (1 > 2) { 10 }", null},
-                {"if (false) { 10 }", null},
-                {"if ((if (false) { 10 })) { 10 } else { 20 }", 20L}
-        };
-
-        runVmTests(tests);
-    }
-
-    @Test
-    public void testMakeInstruction() {
-        Object[][] tests = {
-                {
-                        Opcode.OpConstant,
-                        new int[]{65534},
-                        new byte[]{(byte) Opcode.OpConstant.getCode(), (byte) 0xFF, (byte) 0xFE}
-                },
-                {
-                        Opcode.OpAdd,
-                        new int[]{},
-                        new byte[]{(byte) Opcode.OpAdd.getCode()}
-                }
-        };
-
-        for (Object[] tt : tests) {
-            Opcode op = (Opcode) tt[0];
-            int[] operands = (int[]) tt[1];
-            byte[] expected = (byte[]) tt[2];
-
-            byte[] instruction = Code.make(op, operands);
-
-            assertEquals(expected.length, instruction.length,
-                    "instruction has wrong length");
-
-            for (int i = 0; i < expected.length; i++) {
-                assertEquals(expected[i], instruction[i],
-                        String.format("wrong byte at pos %d", i));
-            }
-        }
-    }
-
-    @Test
-    public void testInstructionsString() {
-        Instructions instructions = new Instructions();
-        instructions.addAll(Code.make(Opcode.OpAdd));
-        instructions.addAll(Code.make(Opcode.OpConstant, 2));
-        instructions.addAll(Code.make(Opcode.OpConstant, 65535));
-
-        String expected = """
-            0000 OpAdd
-            0001 OpConstant 2
-            0004 OpConstant 65535
-            """;
-
-        assertEquals(expected, instructions.toString());
-    }
-
-    // 輔助方法
-
-    private void runVmTests(Object[][] tests) throws Exception {
-        for (Object[] tt : tests) {
-            String input = (String) tt[0];
-            Object expected = tt[1];
-
-            Program program = parse(input);
+            // 2. 編譯
             Compiler compiler = new Compiler();
-            compiler.compile(program);
+            try {
+                compiler.compile(program);
+            } catch (Compiler.CompilerException e) {
+                fail("compiler error: " + e.getMessage());
+            }
 
-            VM vm = new VM(compiler.bytecode());
-            vm.run();
+            // 3. 獲取編譯結果
+            Bytecode bytecode = compiler.bytecode();
 
-            MonkeyObject stackElem = vm.lastPoppedStackElem();
-            testExpectedObject(expected, stackElem);
+            // 4. 驗證指令
+            testInstructions(tt.expectedInstructions, bytecode.getInstructions());
+
+            // 5. 驗證常量池
+            testConstants(tt.expectedConstants, bytecode.getConstants());
         }
     }
 
+    /**
+     * 解析 Monkey 代碼
+     */
     private Program parse(String input) {
         Lexer l = new Lexer(input);
         Parser p = new Parser(l);
         return p.parseProgram();
     }
 
-    private void testExpectedObject(Object expected, MonkeyObject actual) {
-        if (expected instanceof Long) {
-            testIntegerObject((Long) expected, actual);
-        } else if (expected instanceof Boolean) {
-            testBooleanObject((Boolean) expected, actual);
-        } else if (expected == null) {
-            assertSame(NullObject.NULL, actual, "object is not Null");
+    /**
+     * 驗證生成的指令是否正確
+     */
+    private void testInstructions(byte[][] expected, Instructions actual) {
+        Instructions concatenated = concatInstructions(expected);
+
+        assertEquals(
+                concatenated.size(),
+                actual.size(),
+                String.format("wrong instructions length.\nwant=%s\ngot=%s",
+                        concatenated, actual)
+        );
+
+        for (int i = 0; i < concatenated.size(); i++) {
+            assertEquals(
+                    concatenated.get(i),
+                    actual.get(i),
+                    String.format("wrong instruction at %d.\nwant=%s\ngot=%s",
+                            i, concatenated, actual)
+            );
         }
     }
 
-    private void testIntegerObject(long expected, MonkeyObject actual) {
-        assertTrue(actual instanceof IntegerObject,
-                "object is not Integer. got=" + actual.getClass().getName());
-
-        IntegerObject result = (IntegerObject) actual;
-        assertEquals(expected, result.getValue(),
-                "object has wrong value. got=" + result.getValue() + ", want=" + expected);
+    /**
+     * 連接多條指令為單個指令序列
+     */
+    private Instructions concatInstructions(byte[][] s) {
+        Instructions out = new Instructions();
+        for (byte[] ins : s) {
+            out.append(ins);
+        }
+        return out;
     }
 
-    private void testBooleanObject(boolean expected, MonkeyObject actual) {
-        assertTrue(actual instanceof BooleanObject,
-                "object is not Boolean. got=" + actual.getClass().getName());
+    /**
+     * 驗證常量池是否正確
+     */
+    private void testConstants(Object[] expected, List<MonkeyObject> actual) {
+        assertEquals(
+                expected.length,
+                actual.size(),
+                "wrong number of constants"
+        );
 
-        BooleanObject result = (BooleanObject) actual;
-        assertEquals(expected, result.getValue(),
-                "object has wrong value. got=" + result.getValue() + ", want=" + expected);
+        for (int i = 0; i < expected.length; i++) {
+            Object constant = expected[i];
+            if (constant instanceof Integer) {
+                testIntegerObject((long) (int) constant, actual.get(i));
+            }
+        }
+    }
+
+    /**
+     * 驗證整數對象
+     */
+    private void testIntegerObject(long expected, MonkeyObject actual) {
+        assertTrue(actual instanceof IntegerObject, "object is not Integer. got=" + actual.getClass());
+
+        IntegerObject result = (IntegerObject) actual;
+
+        assertTrue(actual instanceof IntegerObject, "object is not Integer. got=" + actual.getClass());
+        assertEquals(expected, result.getValue(), "object has wrong value");
+    }
+
+    /**
+     * 測試用例結構
+     */
+    private static class CompilerTestCase {
+        String input;                  // 源代碼
+        Object[] expectedConstants;    // 期望的常量池
+        byte[][] expectedInstructions; // 期望的指令
+
+        CompilerTestCase(String input, Object[] expectedConstants, byte[][] expectedInstructions) {
+            this.input = input;
+            this.expectedConstants = expectedConstants;
+            this.expectedInstructions = expectedInstructions;
+        }
     }
 }

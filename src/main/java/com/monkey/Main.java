@@ -1,22 +1,30 @@
 package com.monkey;
 
 import com.monkey.ast.Program;
-import com.monkey.evaluator.Environment;
+import com.monkey.compiler.Bytecode;
+import com.monkey.compiler.Compiler;
 import com.monkey.evaluator.Evaluator;
 import com.monkey.lexer.Lexer;
+import com.monkey.evaluator.Environment;
 import com.monkey.object.MonkeyObject;
 import com.monkey.parser.Parser;
-import com.monkey.token.Token;
-import com.monkey.token.TokenType;
+import com.monkey.vm.VM;
 
-import java.util.Scanner;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.util.List;
 
 /**
- * Main 類用於測試 Lexer
+ * Monkey 語言主程序
+ * Chapter 2: 整合編譯器和虛擬機
+ *
+ * 支持兩種執行模式:
+ * 1. 解釋器模式 (Tree-Walking Interpreter)
+ * 2. 編譯器模式 (Bytecode Compiler + VM)
  */
 public class Main {
-
-    //Chapter 3
     private static final String PROMPT = ">> ";
     private static final String MONKEY_FACE = """
               __,__
@@ -32,381 +40,230 @@ public class Main {
              '~---~'
     """;
 
-
     public static void main(String[] args) {
-// Chapter 1
-//        String input = """
-//            let five = 5;
-//            let ten = 10;
-//
-//            let add = fn(x, y) {
-//              x + y;
-//            };
-//
-//            let result = add(five, ten);
-//            !-/*5;
-//            5 < 10 > 5;
-//
-//            if (5 < 10) {
-//                return true;
-//            } else {
-//                return false;
-//            }
-//
-//            10 == 10;
-//            10 != 9;
-//            """;
-//
-//        System.out.println("Lexing the following input:");
-//        System.out.println("----------------------------");
-//        System.out.println(input);
-//        System.out.println("----------------------------");
-//        System.out.println("\nTokens generated:");
-//        System.out.println("----------------------------");
-//
-//        Lexer lexer = new Lexer(input);
-//
-//        Token tok = lexer.nextToken();
-//        int tokenCount = 0;
-//
-//        while (tok.getType() != TokenType.EOF) {
-//            System.out.printf("%3d. Type: %-12s Literal: '%s'%n",
-//                    ++tokenCount,
-//                    tok.getType(),
-//                    tok.getLiteral());
-//            tok = lexer.nextToken();
-//        }
-//
-//        System.out.println("----------------------------");
-//        System.out.println("Total tokens: " + tokenCount);
-//        System.out.println("\n✅ Lexer 運行完成！");
-
-        // Chapter 2
-//        System.out.println("=".repeat(60));
-//        System.out.println("Monkey Language Parser - Chapter 2 Demo");
-//        System.out.println("=".repeat(60));
-//
-//        // 測試各種表達式和語句
-//        String[] testCases = {
-//                // Let 語句
-//                "let x = 5;",
-//                "let y = 10;",
-//                "let foobar = 838383;",
-//
-//                // Return 語句
-//                "return 5;",
-//                "return x + y;",
-//
-//                // 表達式語句
-//                "5;",
-//                "foobar;",
-//
-//                // 前綴表達式
-//                "-5;",
-//                "!true;",
-//                "!false;",
-//
-//                // 中綴表達式
-//                "5 + 5;",
-//                "5 - 5;",
-//                "5 * 5;",
-//                "5 / 5;",
-//                "5 > 5;",
-//                "5 < 5;",
-//                "5 == 5;",
-//                "5 != 5;",
-//
-//                // 複雜表達式（測試優先級）
-//                "3 + 4 * 5;",
-//                "(5 + 5) * 2;",
-//                "2 / (5 + 5);",
-//                "-(5 + 5);",
-//
-//                // 布林表達式
-//                "true == true;",
-//                "false != true;",
-//                "3 > 5 == false;",
-//
-//                // If 表達式
-//                "if (x < y) { x }",
-//                "if (x < y) { x } else { y }",
-//
-//                // 函數字面值
-//                "fn(x, y) { x + y; }",
-//                "fn() { return 5; }",
-//
-//                // 函數調用
-//                "add(1, 2);",
-//                "add(1, 2 * 3, 4 + 5);",
-//
-//                // 複雜程式
-//                """
-//            let add = fn(x, y) {
-//                x + y;
-//            };
-//
-//            let result = add(5, 10);
-//            result;
-//            """
-//        };
-//
-//        for (int i = 0; i < testCases.length; i++) {
-//            String input = testCases[i];
-//            System.out.println("\n" + "-".repeat(60));
-//            System.out.printf("Test Case %d:%n", i + 1);
-//            System.out.println("-".repeat(60));
-//            System.out.println("Input:");
-//            System.out.println(input);
-//            System.out.println();
-//
-//            Lexer lexer = new Lexer(input);
-//            Parser parser = new Parser(lexer);
-//            Program program = parser.parseProgram();
-//
-//            if (!parser.getErrors().isEmpty()) {
-//                System.err.println("❌ Parser Errors:");
-//                for (String error : parser.getErrors()) {
-//                    System.err.println("  - " + error);
-//                }
-//            } else {
-//                System.out.println("✅ Parsed successfully!");
-//                System.out.println("\nAST:");
-//                System.out.println(program.string());
-//
-//                System.out.println("\nNumber of statements: " + program.getStatements().size());
-//            }
-//        }
-//
-//        System.out.println("\n" + "=".repeat(60));
-//        System.out.println("🎉 Parser Demo Complete!");
-//        System.out.println("=".repeat(60));
-//
-//        // 展示一個完整的 Monkey 程式
-//        System.out.println("\nParsing a complete Monkey program:");
-//        System.out.println("=".repeat(60));
-//
-//        String completeProgram = """
-//            let five = 5;
-//            let ten = 10;
-//
-//            let add = fn(x, y) {
-//              x + y;
-//            };
-//
-//            let result = add(five, ten);
-//
-//            if (result > 10) {
-//                return true;
-//            } else {
-//                return false;
-//            }
-//            """;
-//
-//        System.out.println(completeProgram);
-//        System.out.println("=".repeat(60));
-//
-//        Lexer lexer = new Lexer(completeProgram);
-//        Parser parser = new Parser(lexer);
-//        Program program = parser.parseProgram();
-//
-//        if (!parser.getErrors().isEmpty()) {
-//            System.err.println("❌ Parser Errors:");
-//            for (String error : parser.getErrors()) {
-//                System.err.println("  - " + error);
-//            }
-//        } else {
-//            System.out.println("✅ Complete program parsed successfully!");
-//            System.out.println("\nGenerated AST:");
-//            System.out.println(program.string());
-//        }
-
         System.out.println("Hello! This is the Monkey programming language!");
         System.out.println("Feel free to type in commands");
         System.out.println(MONKEY_FACE);
 
-        if (args.length > 0 && args[0].equals("--demo")) {
-            runDemo();
-        } else {
-            startRepl();
+        // 檢查命令行參數
+        if (args.length > 0) {
+            switch (args[0]) {
+                case "--demo":
+                    runDemo();
+                    return;
+                case "--interpreter":
+                    startInterpreterREPL();
+                    return;
+                case "--compiler":
+                    startCompilerREPL();
+                    return;
+                case "--help":
+                    printHelp();
+                    return;
+            }
+        }
+
+        // 默認使用編譯器模式
+        System.out.println("Mode: Compiler (use --interpreter for interpreter mode)\n");
+        startCompilerREPL();
+    }
+
+    /**
+     * 打印幫助信息
+     */
+    private static void printHelp() {
+        System.out.println("Monkey Language - Usage:");
+        System.out.println("  java -jar monkey.jar              Start compiler REPL (default)");
+        System.out.println("  java -jar monkey.jar --compiler   Start compiler REPL");
+        System.out.println("  java -jar monkey.jar --interpreter Start interpreter REPL");
+        System.out.println("  java -jar monkey.jar --demo       Run demo examples");
+        System.out.println("  java -jar monkey.jar --help       Show this help");
+    }
+
+    /**
+     * 啟動編譯器 REPL
+     */
+    private static void startCompilerREPL() {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        PrintWriter writer = new PrintWriter(System.out, true);
+
+        while (true) {
+            writer.print(PROMPT);
+            writer.flush();
+
+            String line;
+            try {
+                line = reader.readLine();
+                if (line == null || line.equals("exit")) {
+                    writer.println("Goodbye!");
+                    return;
+                }
+            } catch (IOException e) {
+                return;
+            }
+
+            // 詞法分析
+            Lexer lexer = new Lexer(line);
+
+            // 語法分析
+            Parser parser = new Parser(lexer);
+            Program program = parser.parseProgram();
+
+            if (parser.getErrors().size() != 0) {
+                printParserErrors(writer, parser.getErrors());
+                continue;
+            }
+
+            // 編譯
+            Compiler compiler = new Compiler();
+            try {
+                compiler.compile(program);
+            } catch (Compiler.CompilerException e) {
+                writer.println("Woops! Compilation failed:");
+                writer.println(" " + e.getMessage());
+                continue;
+            }
+
+            // 執行
+            VM machine = new VM(compiler.bytecode());
+            try {
+                machine.run();
+            } catch (VM.VMException e) {
+                writer.println("Woops! Executing bytecode failed:");
+                writer.println(" " + e.getMessage());
+                continue;
+            }
+
+            // 輸出結果
+            MonkeyObject stackTop = machine.stackTop();
+            if (stackTop != null) {
+                writer.println(stackTop.inspect());
+            }
         }
     }
 
     /**
-     * 啟動 REPL
+     * 啟動解釋器 REPL
      */
-    private static void startRepl() {
-        Scanner scanner = new Scanner(System.in);
+    private static void startInterpreterREPL() {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        PrintWriter writer = new PrintWriter(System.out, true);
         Environment env = new Environment();
 
         while (true) {
-            System.out.print(PROMPT);
+            writer.print(PROMPT);
+            writer.flush();
 
-            if (!scanner.hasNextLine()) {
-                break;
-            }
-
-            String line = scanner.nextLine();
-
-            if (line.equals("exit") || line.equals("quit")) {
-                System.out.println("Goodbye!");
-                break;
-            }
-
-            if (line.trim().isEmpty()) {
-                continue;
+            String line;
+            try {
+                line = reader.readLine();
+                if (line == null || line.equals("exit")) {
+                    writer.println("Goodbye!");
+                    return;
+                }
+            } catch (IOException e) {
+                return;
             }
 
             Lexer lexer = new Lexer(line);
             Parser parser = new Parser(lexer);
             Program program = parser.parseProgram();
 
-            if (!parser.getErrors().isEmpty()) {
-                printParserErrors(parser.getErrors());
+            if (parser.getErrors().size() != 0) {
+                printParserErrors(writer, parser.getErrors());
                 continue;
             }
 
             MonkeyObject evaluated = Evaluator.eval(program, env);
             if (evaluated != null) {
-                System.out.println(evaluated.inspect());
+                writer.println(evaluated.inspect());
             }
         }
-
-        scanner.close();
     }
 
     /**
-     * 打印 Parser 錯誤
+     * 打印解析器錯誤
      */
-    private static void printParserErrors(java.util.List<String> errors) {
-        System.out.println(MONKEY_FACE);
-        System.out.println("Woops! We ran into some monkey business here!");
-        System.out.println(" parser errors:");
+    private static void printParserErrors(PrintWriter writer, List<String> errors) {
+        writer.println(MONKEY_FACE);
+        writer.println("Woops! We ran into some monkey business here!");
+        writer.println(" parser errors:");
         for (String msg : errors) {
-            System.out.println("\t" + msg);
+            writer.println("\t" + msg);
         }
     }
 
     /**
-     * 運行示範程式
+     * 運行演示程序
      */
     private static void runDemo() {
-        System.out.println("\n" + "=".repeat(60));
-        System.out.println("Monkey Language Evaluator - Chapter 3 Demo");
-        System.out.println("=".repeat(60));
+        System.out.println("=== Monkey Compiler & VM Demo ===\n");
 
-        String[] testCases = {
-                // 整數運算
-                "5",
-                "10",
-                "5 + 5",
-                "5 - 5",
-                "5 * 5",
-                "5 / 5",
-
-                // 複雜表達式
+        String[] tests = {
+                "1",
+                "2",
+                "1 + 2",
+                "1 - 2",
+                "1 * 2",
+                "4 / 2",
+                "50 / 2 * 2 + 10",
                 "2 * (5 + 10)",
-                "(5 + 10 * 2 + 15 / 3) * 2 + -10",
-
-                // 布林值
-                "true",
-                "false",
-                "!true",
-                "!false",
-
-                // 比較運算
-                "1 < 2",
-                "1 > 2",
-                "1 == 1",
-                "1 != 2",
-                "true == true",
-                "false != true",
-
-                // If 表達式
-                "if (true) { 10 }",
-                "if (false) { 10 } else { 20 }",
-                "if (1 < 2) { 10 }",
-
-                // Return 語句
-                "return 10;",
-                "return 2 * 5;",
-
-                // Let 綁定
-                "let a = 5; a;",
-                "let a = 5 * 5; a;",
-                "let a = 5; let b = a; let c = a + b + 5; c;",
-
-                // 函數
-                "let identity = fn(x) { x; }; identity(5);",
-                "let add = fn(x, y) { x + y; }; add(5, 5);",
-                "fn(x) { x; }(5)",
-
-                // 閉包
-                """
-            let newAdder = fn(x) {
-                fn(y) { x + y };
-            };
-            let addTwo = newAdder(2);
-            addTwo(3);
-            """,
-
-                // 遞迴（階乘）
-                """
-            let factorial = fn(n) {
-                if (n == 0) {
-                    1
-                } else {
-                    n * factorial(n - 1)
-                }
-            };
-            factorial(5);
-            """,
-
-                // 錯誤處理
-                "5 + true",
-                "-true",
-                "foobar"
+                "3 * 3 * 3 + 10",
+                "3 * (3 * 3) + 10",
+                "(5 + 10 * 2 + 15 / 3) * 2 + -10"
         };
 
-        Environment env = new Environment();
+        for (String input : tests) {
+            System.out.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            System.out.println("Input: " + input);
 
-        for (int i = 0; i < testCases.length; i++) {
-            String input = testCases[i];
-            System.out.println("\n" + "-".repeat(60));
-            System.out.printf("Test Case %d:%n", i + 1);
-            System.out.println("-".repeat(60));
-            System.out.println("Input:");
-            System.out.println(input);
-            System.out.println();
-
+            // 解析
             Lexer lexer = new Lexer(input);
             Parser parser = new Parser(lexer);
             Program program = parser.parseProgram();
 
             if (!parser.getErrors().isEmpty()) {
-                System.err.println("❌ Parser Errors:");
-                for (String error : parser.getErrors()) {
-                    System.err.println("  - " + error);
-                }
+                System.out.println("Parser errors:");
+                parser.getErrors().forEach(System.out::println);
                 continue;
             }
 
-            MonkeyObject evaluated = Evaluator.eval(program, env);
-            if (evaluated != null) {
-                System.out.println("Result:");
-                System.out.println(evaluated.inspect());
-                System.out.println("\nType: " + evaluated.type());
-            } else {
-                System.out.println("Result: (no value)");
+            // 編譯
+            Compiler compiler = new Compiler();
+            try {
+                compiler.compile(program);
+            } catch (Compiler.CompilerException e) {
+                System.out.println("Compiler error: " + e.getMessage());
+                continue;
             }
+
+            Bytecode bytecode = compiler.bytecode();
+
+            // 顯示編譯結果
+            System.out.println("\nConstants:");
+            List<MonkeyObject> constants = bytecode.getConstants();
+            for (int i = 0; i < constants.size(); i++) {
+                System.out.printf("  %d: %s\n", i, constants.get(i).inspect());
+            }
+
+            System.out.println("\nInstructions:");
+            System.out.print(bytecode.getInstructions());
+
+            // 執行
+            VM vm = new VM(bytecode);
+            try {
+                vm.run();
+            } catch (VM.VMException e) {
+                System.out.println("VM error: " + e.getMessage());
+                continue;
+            }
+
+            MonkeyObject result = vm.stackTop();
+            System.out.println("Result: " + (result != null ? result.inspect() : "null"));
+            System.out.println();
         }
 
-        System.out.println("\n" + "=".repeat(60));
-        System.out.println("🎉 Evaluator Demo Complete!");
-        System.out.println("=".repeat(60));
-
-        System.out.println("\nTry the REPL:");
-        System.out.println("  java -jar monkey.jar");
-        System.out.println("\nREPL Commands:");
-        System.out.println("  exit or quit - Exit the REPL");
+        System.out.println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        System.out.println("Demo completed!");
     }
 }
