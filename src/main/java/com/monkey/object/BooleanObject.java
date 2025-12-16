@@ -4,7 +4,7 @@ package com.monkey.object;
  * BooleanObject 表示布爾值對象
  * Chapter 3: Compiling Expressions
  */
-public class BooleanObject implements MonkeyObject{
+public class BooleanObject implements MonkeyObject, Hashable{
     private final boolean value;
 
     // 單例模式 - 只有兩個實例
