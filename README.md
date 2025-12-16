@@ -2053,3 +2053,515 @@ A: 當然!步驟:
 A: 對於簡單運算,大約快 2-3 倍。隨著代碼複雜度增加,差距會更大。
 
 **繼續加油!你正在構建一個真正的編譯器!** 🚀
+
+# Writing A Compiler In Java - Chapter 3: Compiling Expressions
+
+## 🎯 本章目標
+
+在第三章中,我們擴展了編譯器和虛擬機,添加了:
+
+1. ✅ **OpPop 指令** - 清理堆疊
+2. ✅ **更多算術運算** - 減法、乘法、除法
+3. ✅ **布爾值** - true/false
+4. ✅ **比較運算** - ==, !=, >, <
+5. ✅ **前綴運算** - !, -
+6. ✅ **完整的表達式支持**
+
+## 📁 新增和修改的文件
+
+### 核心文件 (修改)
+- `Opcode.java` - 添加新的操作碼
+- `Instructions.java` - 更新指令定義
+- `Compiler.java` - 添加新的編譯邏輯
+- `VM.java` - 添加新的執行邏輯
+
+### Object 系統 (新增)
+- `BooleanObject.java` - 布爾值對象
+
+### AST 節點 (新增,如果沒有)
+- `BooleanLiteral.java` - 布爾字面量
+- `PrefixExpression.java` - 前綴表達式
+
+### 測試文件 (更新)
+- `CompilerTest.java` - 新的測試用例
+- `VMTest.java` - 新的測試用例
+
+## 🚀 快速開始
+
+### 1. 編譯和測試
+
+```bash
+# 編譯
+mvn clean compile
+
+# 運行測試
+mvn test
+
+# 應該看到所有測試通過
+[INFO] Tests run: 2, Failures: 0 (CompilerTest)
+[INFO] Tests run: 2, Failures: 0 (VMTest)
+```
+
+### 2. 運行 REPL
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+嘗試新功能:
+
+```
+>> 1 + 2
+3
+>> 1 - 2
+-1
+>> 2 * 3
+6
+>> 10 / 2
+5
+>> true
+true
+>> false
+false
+>> 1 < 2
+true
+>> 1 > 2
+false
+>> 1 == 1
+true
+>> 1 != 2
+true
+>> !true
+false
+>> -5
+-5
+>> !(5 > 3)
+false
+```
+
+## 📚 核心概念
+
+### 1. OpPop 指令 - 清理堆疊
+
+**問題:** 表達式語句執行後,結果留在堆疊上會導致堆疊溢出
+
+```
+1 + 2;  // 結果 3 留在堆疊上
+3 + 4;  // 結果 7 也留在堆疊上
+5 + 6;  // 堆疊: [3, 7, 11]
+...     // 最終堆疊溢出!
+```
+
+**解決:** 表達式語句編譯後添加 OpPop
+
+```java
+// Compiler.java
+if (node instanceof ExpressionStatement) {
+    ExpressionStatement exprStmt = (ExpressionStatement) node;
+    compile(exprStmt.getExpression());
+    emit(Opcode.OP_POP);  // 清理結果
+}
+```
+
+**效果:**
+```
+1 + 2;  // 執行後 OpPop,堆疊清空
+3 + 4;  // 執行後 OpPop,堆疊清空
+```
+
+### 2. 布爾值
+
+布爾值使用單例模式優化記憶體:
+
+```java
+// VM.java
+public static final BooleanObject TRUE = new BooleanObject(true);
+public static final BooleanObject FALSE = new BooleanObject(false);
+```
+
+**編譯:**
+```
+true  → OpTrue
+false → OpFalse
+```
+
+**執行:**
+```java
+case OP_TRUE:
+    push(TRUE);  // 推入單例對象
+    break;
+case OP_FALSE:
+    push(FALSE);
+    break;
+```
+
+### 3. 比較運算
+
+#### 支持的運算符
+
+| 運算符 | 操作碼 | 說明 |
+|--------|--------|------|
+| == | OpEqual | 相等比較 |
+| != | OpNotEqual | 不等比較 |
+| > | OpGreaterThan | 大於比較 |
+| < | (無) | 轉換為 > |
+
+#### < 運算符的巧妙轉換
+
+**問題:** 如果實現 OpLessThan 和 OpGreaterThan,會有重複代碼
+
+**解決:** 只實現 OpGreaterThan,將 < 轉換為 >
+
+```java
+// a < b 等價於 b > a
+if (infixExpr.getOperator().equals("<")) {
+    compile(infixExpr.getRight());  // 先編譯右側
+    compile(infixExpr.getLeft());   // 再編譯左側
+    emit(Opcode.OP_GREATER_THAN);   // 發射 >
+    return;
+}
+```
+
+**示例:**
+```
+輸入: 1 < 2
+編譯:
+  OpConstant 1 (索引為 2)
+  OpConstant 0 (索引為 1)
+  OpGreaterThan
+執行: 2 > 1 = true
+```
+
+### 4. 前綴運算
+
+#### ! 運算符 (邏輯非)
+
+```java
+case OP_BANG:
+    MonkeyObject operand = pop();
+    if (operand == TRUE) {
+        push(FALSE);
+    } else if (operand == FALSE) {
+        push(TRUE);
+    } else {
+        // Monkey: 只有 false 和 null 是 falsy
+        // 其他都是 truthy
+        push(FALSE);
+    }
+    break;
+```
+
+**示例:**
+```
+!true  → false
+!false → true
+!5     → false (5 是 truthy)
+!!true → true
+```
+
+#### - 運算符 (取負)
+
+```java
+case OP_MINUS:
+    MonkeyObject operand = pop();
+    if (!(operand instanceof IntegerObject)) {
+        throw new VMException("unsupported type for negation");
+    }
+    long value = ((IntegerObject) operand).getValue();
+    push(new IntegerObject(-value));
+    break;
+```
+
+**示例:**
+```
+-5     → -5
+-(-10) → 10
+-(1+2) → -3
+```
+
+## 🔍 詳細實現
+
+### 編譯流程示例
+
+#### 示例 1: `1 + 2 * 3`
+
+**AST:**
+```
+InfixExpression(+)
+  ├─ IntegerLiteral(1)
+  └─ InfixExpression(*)
+      ├─ IntegerLiteral(2)
+      └─ IntegerLiteral(3)
+```
+
+**編譯:**
+```
+Constants: [1, 2, 3]
+
+Instructions:
+0000 OpConstant 0  ; 載入 1
+0003 OpConstant 1  ; 載入 2
+0006 OpConstant 2  ; 載入 3
+0009 OpMul         ; 2 * 3 = 6
+0010 OpAdd         ; 1 + 6 = 7
+0011 OpPop
+```
+
+**執行:**
+```
+stack: []
+→ OpConstant 0 → stack: [1]
+→ OpConstant 1 → stack: [1, 2]
+→ OpConstant 2 → stack: [1, 2, 3]
+→ OpMul        → stack: [1, 6]
+→ OpAdd        → stack: [7]
+→ OpPop        → stack: []
+```
+
+#### 示例 2: `1 < 2`
+
+**編譯:**
+```
+Constants: [2, 1]  # 注意順序反轉!
+
+Instructions:
+0000 OpConstant 0  ; 載入 2
+0003 OpConstant 1  ; 載入 1
+0006 OpGreaterThan ; 2 > 1
+0007 OpPop
+```
+
+**執行:**
+```
+stack: []
+→ OpConstant 0 → stack: [2]
+→ OpConstant 1 → stack: [2, 1]
+→ OpGreaterThan → stack: [true]  # 2 > 1 = true
+→ OpPop        → stack: []
+```
+
+#### 示例 3: `!true`
+
+**編譯:**
+```
+Constants: []
+
+Instructions:
+0000 OpTrue
+0001 OpBang
+0002 OpPop
+```
+
+**執行:**
+```
+stack: []
+→ OpTrue → stack: [true]
+→ OpBang → stack: [false]
+→ OpPop  → stack: []
+```
+
+### lastPoppedStackElem 的作用
+
+**問題:** OpPop 會清空堆疊,測試如何獲取結果?
+
+**解決:** VM 添加 `lastPoppedStackElem()` 方法
+
+```java
+public MonkeyObject lastPoppedStackElem() {
+    return stack[sp];  // sp 指向下一個位置
+                       // OpPop 後,sp 遞減
+                       // 被彈出的元素仍在 stack[sp]
+}
+```
+
+**測試中使用:**
+```java
+VM vm = new VM(bytecode);
+vm.run();
+MonkeyObject result = vm.lastPoppedStackElem();  // 獲取結果
+testExpectedObject(expected, result);
+```
+
+## 🧪 測試詳解
+
+### 編譯器測試
+
+```java
+@Test
+public void testBooleanExpressions() {
+    CompilerTestCase[] tests = new CompilerTestCase[]{
+        // 布爾字面量
+        new CompilerTestCase(
+            "true",
+            new Object[]{},  // 無常量
+            new byte[][]{
+                Instructions.make(Opcode.OP_TRUE),
+                Instructions.make(Opcode.OP_POP)
+            }
+        ),
+        
+        // < 運算符轉換
+        new CompilerTestCase(
+            "1 < 2",
+            new Object[]{2, 1},  // 操作數反轉!
+            new byte[][]{
+                Instructions.make(Opcode.OP_CONSTANT, 0),
+                Instructions.make(Opcode.OP_CONSTANT, 1),
+                Instructions.make(Opcode.OP_GREATER_THAN),
+                Instructions.make(Opcode.OP_POP)
+            }
+        )
+    };
+    
+    runCompilerTests(tests);
+}
+```
+
+### 虛擬機測試
+
+```java
+@Test
+public void testBooleanExpressions() {
+    VMTestCase[] tests = new VMTestCase[]{
+        // 基本測試
+        new VMTestCase("true", true),
+        new VMTestCase("false", false),
+        
+        // 比較運算
+        new VMTestCase("1 < 2", true),
+        new VMTestCase("1 > 2", false),
+        new VMTestCase("1 == 1", true),
+        
+        // 邏輯非
+        new VMTestCase("!true", false),
+        new VMTestCase("!!true", true),
+        
+        // 複雜表達式
+        new VMTestCase("(1 < 2) == true", true),
+        new VMTestCase("!(5 > 3)", false)
+    };
+    
+    runVMTests(tests);
+}
+```
+
+## 💡 設計決策
+
+### 1. 為什麼只實現 OpGreaterThan?
+
+**問題:** 需要實現 <, >, <=, >= 四個運算符嗎?
+
+**答案:** 不需要!
+
+```
+a < b  ≡ b > a
+a <= b ≡ !(a > b)
+a >= b ≡ !(b > a)
+```
+
+只需實現 OpGreaterThan,其他可以轉換。
+
+**優點:**
+- ✅ 減少操作碼數量
+- ✅ 減少 VM 代碼
+- ✅ 編譯器負責轉換
+
+### 2. 為什麼布爾值用單例?
+
+**原因:**
+- 整個程序只需要兩個布爾對象
+- 可以用 `==` 直接比較
+- 節省記憶體
+
+```java
+// 不需要創建新對象
+push(TRUE);   // 總是同一個對象
+push(FALSE);  // 總是同一個對象
+
+// 可以直接比較
+if (obj == TRUE) { ... }
+```
+
+### 3. 為什麼需要 OpPop?
+
+**沒有 OpPop 的問題:**
+```
+1 + 2;
+3 + 4;
+5 + 6;
+
+堆疊: [3, 7, 11]  // 結果累積
+```
+
+**有 OpPop:**
+```
+1 + 2;  OpPop → 堆疊: []
+3 + 4;  OpPop → 堆疊: []
+5 + 6;  OpPop → 堆疊: []
+```
+
+**結論:** OpPop 確保表達式語句不會污染堆疊
+
+## 📊 新增操作碼總覽
+
+| 操作碼 | 操作數 | 功能 | 堆疊變化 |
+|--------|--------|------|----------|
+| OpPop | 無 | 彈出頂部 | [a] → [] |
+| OpSub | 無 | 減法 | [a,b] → [a-b] |
+| OpMul | 無 | 乘法 | [a,b] → [a*b] |
+| OpDiv | 無 | 除法 | [a,b] → [a/b] |
+| OpTrue | 無 | 推入true | [] → [true] |
+| OpFalse | 無 | 推入false | [] → [false] |
+| OpEqual | 無 | 相等比較 | [a,b] → [a==b] |
+| OpNotEqual | 無 | 不等比較 | [a,b] → [a!=b] |
+| OpGreaterThan | 無 | 大於比較 | [a,b] → [a>b] |
+| OpBang | 無 | 邏輯非 | [a] → [!a] |
+| OpMinus | 無 | 取負 | [a] → [-a] |
+
+## 🎉 完成第三章!
+
+你現在擁有:
+
+✅ **完整的算術運算** - +, -, *, /  
+✅ **布爾值系統** - true, false  
+✅ **比較運算** - ==, !=, >, <  
+✅ **前綴運算** - !, -  
+✅ **堆疊管理** - OpPop  
+✅ **優化技巧** - 單例、運算符轉換
+
+## 📚 下一步: Chapter 4
+
+第四章將添加:
+
+- **條件語句** - if/else
+- **跳轉指令** - OpJump, OpJumpNotTruthy
+- **Null 值** - OpNull
+- **更複雜的控制流**
+
+## 🔧 常見問題
+
+### Q: 為什麼 < 要轉換為 >?
+
+A: 為了減少 VM 中的代碼重複。只需實現一個比較方向,另一個在編譯時轉換。
+
+### Q: !!5 為什麼是 true?
+
+A: 在 Monkey 中,只有 false 和 null 是 falsy,其他都是 truthy。所以:
+- !5 → false (5 是 truthy)
+- !!5 → !false → true
+
+### Q: 可以添加 <= 和 >= 嗎?
+
+A: 可以!轉換規則:
+```
+a <= b → !(a > b)
+a >= b → !(b > a)
+```
+
+編譯器負責生成額外的 OpBang 指令。
+
+### Q: 為什麼測試用 lastPoppedStackElem?
+
+A: 因為 OpPop 清空了堆疊。lastPoppedStackElem 讓我們能獲取被彈出的值進行測試。
+
+**繼續加油!您的編譯器越來越強大了!** 🚀
