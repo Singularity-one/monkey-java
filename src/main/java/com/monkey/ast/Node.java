@@ -16,4 +16,6 @@ public interface Node {
      * 用於調試和查看 AST 結構
      */
     String string();
+
+    Token getToken();
 }

@@ -6,9 +6,9 @@ import java.util.Objects;
  */
 public class HashKey {
     private final ObjectType type;
-    private final int value;
+    private final long value;  // 改為 long
 
-    public HashKey(ObjectType type, int value) {
+    public HashKey(ObjectType type, long value) {  // 改為 long
         this.type = type;
         this.value = value;
     }
@@ -17,7 +17,7 @@ public class HashKey {
         return type;
     }
 
-    public int getValue() {
+    public long getValue() {  // 改為 long
         return value;
     }
 

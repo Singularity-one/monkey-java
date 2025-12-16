@@ -1,13 +1,13 @@
 package com.monkey.object;
 
 /**
- * BooleanObject 代表布林值
- * 使用單例模式節省記憶體
+ * BooleanObject 表示布爾值對象
+ * Chapter 3: Compiling Expressions
  */
-public class BooleanObject implements MonkeyObject , Hashable{
+public class BooleanObject implements MonkeyObject{
     private final boolean value;
 
-    // 單例實例
+    // 單例模式 - 只有兩個實例
     public static final BooleanObject TRUE = new BooleanObject(true);
     public static final BooleanObject FALSE = new BooleanObject(false);
 
@@ -16,7 +16,7 @@ public class BooleanObject implements MonkeyObject , Hashable{
     }
 
     /**
-     * 獲取對應的 BooleanObject 實例
+     * 從 Java boolean 獲取 BooleanObject
      */
     public static BooleanObject valueOf(boolean value) {
         return value ? TRUE : FALSE;
@@ -38,6 +38,25 @@ public class BooleanObject implements MonkeyObject , Hashable{
 
     @Override
     public HashKey hashKey() {
-        return new HashKey(type(), value ? 1 : 0);
+        long hash = value ? 1L : 0L;
+        return new HashKey(type(), hash);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof BooleanObject)) return false;
+        BooleanObject other = (BooleanObject) obj;
+        return value == other.value;
+    }
+
+    @Override
+    public int hashCode() {
+        return Boolean.hashCode(value);
+    }
+
+    @Override
+    public String toString() {
+        return inspect();
     }
 }

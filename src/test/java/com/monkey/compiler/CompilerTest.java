@@ -4,108 +4,195 @@ import com.monkey.ast.Program;
 import com.monkey.code.Instructions;
 import com.monkey.code.Opcode;
 import com.monkey.lexer.Lexer;
+import com.monkey.object.BooleanObject;
 import com.monkey.object.IntegerObject;
 import com.monkey.object.MonkeyObject;
 import com.monkey.parser.Parser;
-import java.util.List;
-
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 編譯器測試
- * Chapter 2: Hello Bytecode!
+ * Chapter 3: Compiling Expressions
  */
 public class CompilerTest {
 
     /**
-     * 測試整數算術運算編譯
-     *
-     * 這是第二章的核心測試!
-     * 我們要確保 "1 + 2" 能正確編譯為字節碼
+     * 測試整數算術
      */
     @Test
     public void testIntegerArithmetic() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
-                // 測試 "1 + 2"
-                //
-                // AST:
-                //   InfixExpression(+)
-                //     Left: IntegerLiteral(1)
-                //     Right: IntegerLiteral(2)
-                //
-                // 字節碼:
-                //   OpConstant 0  ; 載入常量 1
-                //   OpConstant 1  ; 載入常量 2
-                //   OpAdd         ; 執行加法
                 new CompilerTestCase(
                         "1 + 2",
-                        new Object[]{1, 2},          // 常量池: [1, 2]
+                        new Object[]{1, 2},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_ADD)
+                                Instructions.make(Opcode.OP_ADD),
+                                Instructions.make(Opcode.OP_POP),
                         }
                 ),
-
-                // 測試 "1; 2"
-                // 兩個表達式語句
                 new CompilerTestCase(
                         "1; 2",
                         new Object[]{1, 2},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1)
+                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_POP),
                         }
                 ),
-
-                // 測試 "1 - 2"
                 new CompilerTestCase(
                         "1 - 2",
                         new Object[]{1, 2},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_SUB)
+                                Instructions.make(Opcode.OP_SUB),
+                                Instructions.make(Opcode.OP_POP),
                         }
                 ),
-
-                // 測試 "1 * 2"
                 new CompilerTestCase(
                         "1 * 2",
                         new Object[]{1, 2},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_MUL)
+                                Instructions.make(Opcode.OP_MUL),
+                                Instructions.make(Opcode.OP_POP),
                         }
                 ),
-
-                // 測試 "2 / 1"
                 new CompilerTestCase(
                         "2 / 1",
                         new Object[]{2, 1},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_DIV)
+                                Instructions.make(Opcode.OP_DIV),
+                                Instructions.make(Opcode.OP_POP),
                         }
-                )
+                ),
+                new CompilerTestCase(
+                        "-1",
+                        new Object[]{1},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_MINUS),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
         };
 
         runCompilerTests(tests);
     }
 
     /**
-     * 運行編譯器測試用例
+     * 測試布林表達式
+     */
+    @Test
+    public void testBooleanExpressions() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "true",
+                        new Object[]{},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_TRUE),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "false",
+                        new Object[]{},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_FALSE),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "1 > 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_GREATER_THAN),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "1 < 2",
+                        new Object[]{2, 1},  // 注意: 操作數順序反轉
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_GREATER_THAN),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "1 == 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_EQUAL),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "1 != 2",
+                        new Object[]{1, 2},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_NOT_EQUAL),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "true == false",
+                        new Object[]{},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_TRUE),
+                                Instructions.make(Opcode.OP_FALSE),
+                                Instructions.make(Opcode.OP_EQUAL),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "true != false",
+                        new Object[]{},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_TRUE),
+                                Instructions.make(Opcode.OP_FALSE),
+                                Instructions.make(Opcode.OP_NOT_EQUAL),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+                new CompilerTestCase(
+                        "!true",
+                        new Object[]{},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_TRUE),
+                                Instructions.make(Opcode.OP_BANG),
+                                Instructions.make(Opcode.OP_POP),
+                        }
+                ),
+        };
+
+        runCompilerTests(tests);
+    }
+
+    /**
+     * 運行編譯器測試
      */
     private void runCompilerTests(CompilerTestCase[] tests) {
         for (CompilerTestCase tt : tests) {
-            // 1. 解析源代碼
             Program program = parse(tt.input);
 
-            // 2. 編譯
             Compiler compiler = new Compiler();
             try {
                 compiler.compile(program);
@@ -113,19 +200,15 @@ public class CompilerTest {
                 fail("compiler error: " + e.getMessage());
             }
 
-            // 3. 獲取編譯結果
             Bytecode bytecode = compiler.bytecode();
 
-            // 4. 驗證指令
             testInstructions(tt.expectedInstructions, bytecode.getInstructions());
-
-            // 5. 驗證常量池
             testConstants(tt.expectedConstants, bytecode.getConstants());
         }
     }
 
     /**
-     * 解析 Monkey 代碼
+     * 解析源代碼
      */
     private Program parse(String input) {
         Lexer l = new Lexer(input);
@@ -134,30 +217,24 @@ public class CompilerTest {
     }
 
     /**
-     * 驗證生成的指令是否正確
+     * 測試指令
      */
     private void testInstructions(byte[][] expected, Instructions actual) {
         Instructions concatenated = concatInstructions(expected);
 
-        assertEquals(
-                concatenated.size(),
-                actual.size(),
+        assertEquals(concatenated.size(), actual.size(),
                 String.format("wrong instructions length.\nwant=%s\ngot=%s",
-                        concatenated, actual)
-        );
+                        concatenated, actual));
 
         for (int i = 0; i < concatenated.size(); i++) {
-            assertEquals(
-                    concatenated.get(i),
-                    actual.get(i),
+            assertEquals(concatenated.get(i), actual.get(i),
                     String.format("wrong instruction at %d.\nwant=%s\ngot=%s",
-                            i, concatenated, actual)
-            );
+                            i, concatenated, actual));
         }
     }
 
     /**
-     * 連接多條指令為單個指令序列
+     * 連接多條指令
      */
     private Instructions concatInstructions(byte[][] s) {
         Instructions out = new Instructions();
@@ -168,42 +245,55 @@ public class CompilerTest {
     }
 
     /**
-     * 驗證常量池是否正確
+     * 測試常量
      */
     private void testConstants(Object[] expected, List<MonkeyObject> actual) {
-        assertEquals(
-                expected.length,
-                actual.size(),
-                "wrong number of constants"
-        );
+        assertEquals(expected.length, actual.size(),
+                "wrong number of constants");
 
         for (int i = 0; i < expected.length; i++) {
             Object constant = expected[i];
             if (constant instanceof Integer) {
                 testIntegerObject((long) (int) constant, actual.get(i));
+            } else if (constant instanceof Boolean) {
+                testBooleanObject((boolean) constant, actual.get(i));
             }
         }
     }
 
     /**
-     * 驗證整數對象
+     * 測試整數對象
      */
     private void testIntegerObject(long expected, MonkeyObject actual) {
-        assertTrue(actual instanceof IntegerObject, "object is not Integer. got=" + actual.getClass());
+        assertTrue(actual instanceof IntegerObject,
+                "object is not Integer. got=" + actual.getClass());
 
         IntegerObject result = (IntegerObject) actual;
-
-        assertTrue(actual instanceof IntegerObject, "object is not Integer. got=" + actual.getClass());
-        assertEquals(expected, result.getValue(), "object has wrong value");
+        assertEquals(expected, result.getValue(),
+                String.format("object has wrong value. got=%d, want=%d",
+                        result.getValue(), expected));
     }
 
     /**
-     * 測試用例結構
+     * 測試布林對象
+     */
+    private void testBooleanObject(boolean expected, MonkeyObject actual) {
+        assertTrue(actual instanceof BooleanObject,
+                "object is not Boolean. got=" + actual.getClass());
+
+        BooleanObject result = (BooleanObject) actual;
+        assertEquals(expected, result.getValue(),
+                String.format("object has wrong value. got=%b, want=%b",
+                        result.getValue(), expected));
+    }
+
+    /**
+     * 編譯器測試用例
      */
     private static class CompilerTestCase {
-        String input;                  // 源代碼
-        Object[] expectedConstants;    // 期望的常量池
-        byte[][] expectedInstructions; // 期望的指令
+        String input;
+        Object[] expectedConstants;
+        byte[][] expectedInstructions;
 
         CompilerTestCase(String input, Object[] expectedConstants, byte[][] expectedInstructions) {
             this.input = input;

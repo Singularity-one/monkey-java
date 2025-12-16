@@ -1,4 +1,6 @@
 package com.monkey.ast;
+import com.monkey.token.Token;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,5 +38,13 @@ public class Program implements Node {
             out.append(stmt.string());
         }
         return out.toString();
+    }
+
+    @Override
+    public Token getToken() {
+        if (!statements.isEmpty()) {
+            return statements.get(0).getToken();
+        }
+        return null; // 或 throw exception，看你設計
     }
 }

@@ -1,12 +1,11 @@
 package com.monkey.object;
 
 /**
- * NullObject 代表 null 值
- * 使用單例模式
+ * NullObject 表示 null 值
+ * Chapter 3: Compiling Expressions
  */
 public class NullObject implements MonkeyObject {
-
-    // 單例實例
+    // 單例模式
     public static final NullObject NULL = new NullObject();
 
     private NullObject() {
@@ -24,6 +23,22 @@ public class NullObject implements MonkeyObject {
 
     @Override
     public HashKey hashKey() {
-        return null;
+        // null 總是有相同的 hash key
+        return new HashKey(type(), 0L);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return obj instanceof NullObject;
+    }
+
+    @Override
+    public int hashCode() {
+        return 0;
+    }
+
+    @Override
+    public String toString() {
+        return inspect();
     }
 }
