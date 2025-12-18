@@ -1,18 +1,12 @@
 package com.monkey.code;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Opcode 表示字節碼操作碼
- * Chapter 3: Compiling Expressions
+ * Chapter 4: Conditionals
  *
  * 新增:
- * - 更多算術運算 (Sub, Mul, Div)
- * - 布爾值 (True, False)
- * - 比較運算 (Equal, NotEqual, GreaterThan)
- * - 前綴運算 (Minus, Bang)
- * - 堆疊管理 (Pop)
+ * - 跳轉指令 (Jump, JumpNotTruthy)
+ * - Null 值 (Null)
  */
 public enum Opcode {
     // Chapter 2 - 基礎指令
@@ -36,7 +30,14 @@ public enum Opcode {
 
     // Chapter 3 - 前綴運算
     OP_MINUS((byte) 11),        // 取負 (-x)
-    OP_BANG((byte) 12);         // 邏輯非 (!x)
+    OP_BANG((byte) 12),         // 邏輯非 (!x)
+
+    // Chapter 4 - 跳轉指令
+    OP_JUMP_NOT_TRUTHY((byte) 13), // 條件跳轉: 如果頂部元素為 falsy 則跳轉
+    OP_JUMP((byte) 14),            // 無條件跳轉
+
+    // Chapter 4 - Null 值
+    OP_NULL((byte) 15);         // 推入 null
 
     private final byte value;
 

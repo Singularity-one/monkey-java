@@ -2,7 +2,7 @@ package com.monkey.object;
 
 /**
  * NullObject 表示 null 值
- * Chapter 3: Compiling Expressions
+ * Chapter 4: Conditionals
  */
 public class NullObject implements MonkeyObject {
     // 單例模式

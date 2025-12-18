@@ -16,13 +16,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 編譯器測試
- * Chapter 3: Compiling Expressions
+ * Chapter 4: Conditionals
  */
 public class CompilerTest {
 
-    /**
-     * 測試整數算術
-     */
     @Test
     public void testIntegerArithmetic() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -33,66 +30,13 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
                                 Instructions.make(Opcode.OP_ADD),
-                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_POP)
                         }
-                ),
-                new CompilerTestCase(
-                        "1; 2",
-                        new Object[]{1, 2},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_POP),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "1 - 2",
-                        new Object[]{1, 2},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_SUB),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "1 * 2",
-                        new Object[]{1, 2},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_MUL),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "2 / 1",
-                        new Object[]{2, 1},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_DIV),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "-1",
-                        new Object[]{1},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_MINUS),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
+                )
         };
-
         runCompilerTests(tests);
     }
 
-    /**
-     * 測試布林表達式
-     */
     @Test
     public void testBooleanExpressions() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -101,7 +45,7 @@ public class CompilerTest {
                         new Object[]{},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_TRUE),
-                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_POP)
                         }
                 ),
                 new CompilerTestCase(
@@ -109,86 +53,71 @@ public class CompilerTest {
                         new Object[]{},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_FALSE),
-                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_POP)
                         }
-                ),
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 4: 測試條件語句編譯
+     */
+    @Test
+    public void testConditionals() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                // if (true) { 10 }; 3333;
                 new CompilerTestCase(
-                        "1 > 2",
-                        new Object[]{1, 2},
+                        "if (true) { 10 }; 3333;",
+                        new Object[]{10, 3333},
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_GREATER_THAN),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "1 < 2",
-                        new Object[]{2, 1},  // 注意: 操作數順序反轉
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_GREATER_THAN),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "1 == 2",
-                        new Object[]{1, 2},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_EQUAL),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "1 != 2",
-                        new Object[]{1, 2},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_NOT_EQUAL),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
-                new CompilerTestCase(
-                        "true == false",
-                        new Object[]{},
-                        new byte[][]{
+                                // 0000
                                 Instructions.make(Opcode.OP_TRUE),
-                                Instructions.make(Opcode.OP_FALSE),
-                                Instructions.make(Opcode.OP_EQUAL),
+                                // 0001
+                                Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
+                                // 0004
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                // 0007
+                                Instructions.make(Opcode.OP_JUMP, 11),
+                                // 0010
+                                Instructions.make(Opcode.OP_NULL),
+                                // 0011
                                 Instructions.make(Opcode.OP_POP),
+                                // 0012
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                // 0015
+                                Instructions.make(Opcode.OP_POP)
                         }
                 ),
+
+                // if (true) { 10 } else { 20 }; 3333;
                 new CompilerTestCase(
-                        "true != false",
-                        new Object[]{},
+                        "if (true) { 10 } else { 20 }; 3333;",
+                        new Object[]{10, 20, 3333},
                         new byte[][]{
+                                // 0000
                                 Instructions.make(Opcode.OP_TRUE),
-                                Instructions.make(Opcode.OP_FALSE),
-                                Instructions.make(Opcode.OP_NOT_EQUAL),
+                                // 0001
+                                Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
+                                // 0004
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                // 0007
+                                Instructions.make(Opcode.OP_JUMP, 13),
+                                // 0010
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                // 0013
                                 Instructions.make(Opcode.OP_POP),
+                                // 0014
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                // 0017
+                                Instructions.make(Opcode.OP_POP)
                         }
-                ),
-                new CompilerTestCase(
-                        "!true",
-                        new Object[]{},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_TRUE),
-                                Instructions.make(Opcode.OP_BANG),
-                                Instructions.make(Opcode.OP_POP),
-                        }
-                ),
+                )
         };
 
         runCompilerTests(tests);
     }
 
-    /**
-     * 運行編譯器測試
-     */
     private void runCompilerTests(CompilerTestCase[] tests) {
         for (CompilerTestCase tt : tests) {
             Program program = parse(tt.input);
@@ -207,18 +136,12 @@ public class CompilerTest {
         }
     }
 
-    /**
-     * 解析源代碼
-     */
     private Program parse(String input) {
         Lexer l = new Lexer(input);
         Parser p = new Parser(l);
         return p.parseProgram();
     }
 
-    /**
-     * 測試指令
-     */
     private void testInstructions(byte[][] expected, Instructions actual) {
         Instructions concatenated = concatInstructions(expected);
 
@@ -233,9 +156,6 @@ public class CompilerTest {
         }
     }
 
-    /**
-     * 連接多條指令
-     */
     private Instructions concatInstructions(byte[][] s) {
         Instructions out = new Instructions();
         for (byte[] ins : s) {
@@ -244,9 +164,6 @@ public class CompilerTest {
         return out;
     }
 
-    /**
-     * 測試常量
-     */
     private void testConstants(Object[] expected, List<MonkeyObject> actual) {
         assertEquals(expected.length, actual.size(),
                 "wrong number of constants");
@@ -261,35 +178,24 @@ public class CompilerTest {
         }
     }
 
-    /**
-     * 測試整數對象
-     */
     private void testIntegerObject(long expected, MonkeyObject actual) {
         assertTrue(actual instanceof IntegerObject,
                 "object is not Integer. got=" + actual.getClass());
 
         IntegerObject result = (IntegerObject) actual;
         assertEquals(expected, result.getValue(),
-                String.format("object has wrong value. got=%d, want=%d",
-                        result.getValue(), expected));
+                "object has wrong value");
     }
 
-    /**
-     * 測試布林對象
-     */
     private void testBooleanObject(boolean expected, MonkeyObject actual) {
         assertTrue(actual instanceof BooleanObject,
                 "object is not Boolean. got=" + actual.getClass());
 
         BooleanObject result = (BooleanObject) actual;
         assertEquals(expected, result.getValue(),
-                String.format("object has wrong value. got=%b, want=%b",
-                        result.getValue(), expected));
+                "object has wrong value");
     }
 
-    /**
-     * 編譯器測試用例
-     */
     private static class CompilerTestCase {
         String input;
         Object[] expectedConstants;

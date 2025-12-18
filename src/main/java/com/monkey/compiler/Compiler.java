@@ -12,21 +12,21 @@ import java.util.List;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 3: Compiling Expressions (擴展)
- *
- * 新增功能:
- * - OpPop 指令 (清理堆疊)
- * - 布爾值編譯
- * - 比較運算編譯
- * - 前綴運算編譯
+ * Chapter 4: Conditionals
  */
 public class Compiler {
     private final Instructions instructions;
     private final List<MonkeyObject> constants;
 
+    // Chapter 4: 追蹤最後發射的指令
+    private EmittedInstruction lastInstruction;
+    private EmittedInstruction previousInstruction;
+
     public Compiler() {
         this.instructions = new Instructions();
         this.constants = new ArrayList<>();
+        this.lastInstruction = null;
+        this.previousInstruction = null;
     }
 
     /**
@@ -34,39 +34,41 @@ public class Compiler {
      */
     public void compile(Node node) throws CompilerException {
         if (node instanceof Program) {
-            // 程序根節點
             Program program = (Program) node;
             for (Statement stmt : program.getStatements()) {
                 compile(stmt);
             }
         }
         else if (node instanceof ExpressionStatement) {
-            // 表達式語句
             ExpressionStatement exprStmt = (ExpressionStatement) node;
             compile(exprStmt.getExpression());
-            // Chapter 3: 添加 OpPop 清理堆疊
             emit(Opcode.OP_POP);
         }
+        else if (node instanceof BlockStatement) {
+            // Chapter 4: 區塊語句
+            BlockStatement block = (BlockStatement) node;
+            for (Statement stmt : block.getStatements()) {
+                compile(stmt);
+            }
+        }
+        else if (node instanceof IfExpression) {
+            // Chapter 4: if 表達式
+            compileIfExpression((IfExpression) node);
+        }
         else if (node instanceof InfixExpression) {
-            // 中綴表達式
             InfixExpression infixExpr = (InfixExpression) node;
 
             // 特殊處理: < 轉換為 >
-            // 因為我們只實現 OpGreaterThan
-            // a < b 等價於 b > a
             if (infixExpr.getOperator().equals("<")) {
-                // 交換操作數順序
                 compile(infixExpr.getRight());
                 compile(infixExpr.getLeft());
                 emit(Opcode.OP_GREATER_THAN);
                 return;
             }
 
-            // 正常順序: 先左後右
             compile(infixExpr.getLeft());
             compile(infixExpr.getRight());
 
-            // 發射運算符指令
             switch (infixExpr.getOperator()) {
                 case "+":
                     emit(Opcode.OP_ADD);
@@ -94,13 +96,9 @@ public class Compiler {
             }
         }
         else if (node instanceof PrefixExpression) {
-            // 前綴表達式
             PrefixExpression prefixExpr = (PrefixExpression) node;
-
-            // 先編譯操作數
             compile(prefixExpr.getRight());
 
-            // 發射前綴運算符指令
             switch (prefixExpr.getOperator()) {
                 case "!":
                     emit(Opcode.OP_BANG);
@@ -113,13 +111,11 @@ public class Compiler {
             }
         }
         else if (node instanceof IntegerLiteral) {
-            // 整數字面量
             IntegerLiteral intLit = (IntegerLiteral) node;
             IntegerObject integer = new IntegerObject(intLit.getValue());
             emit(Opcode.OP_CONSTANT, addConstant(integer));
         }
         else if (node instanceof BooleanLiteral) {
-            // 布爾字面量
             BooleanLiteral boolLit = (BooleanLiteral) node;
             if (boolLit.getValue()) {
                 emit(Opcode.OP_TRUE);
@@ -130,11 +126,67 @@ public class Compiler {
     }
 
     /**
+     * Chapter 4: 編譯 if 表達式
+     *
+     * 編譯模式:
+     * 有 else:
+     *   <condition>
+     *   OpJumpNotTruthy <afterConsequence>
+     *   <consequence>
+     *   OpJump <afterAlternative>
+     *   <alternative>
+     *
+     * 無 else:
+     *   <condition>
+     *   OpJumpNotTruthy <afterConsequence>
+     *   <consequence>
+     *   OpJump <afterNull>
+     *   OpNull
+     */
+    private void compileIfExpression(IfExpression ifExpr) throws CompilerException {
+        // 1. 編譯條件
+        compile(ifExpr.getCondition());
+
+        // 2. 發射條件跳轉 (先用假地址 9999)
+        int jumpNotTruthyPos = emit(Opcode.OP_JUMP_NOT_TRUTHY, 9999);
+
+        // 3. 編譯 consequence
+        compile(ifExpr.getConsequence());
+
+        // 移除 consequence 末尾的 OpPop
+        if (lastInstructionIs(Opcode.OP_POP)) {
+            removeLastPop();
+        }
+
+        // 4. 發射無條件跳轉 (跳過 alternative)
+        int jumpPos = emit(Opcode.OP_JUMP, 9999);
+
+        // 5. 回填條件跳轉的目標地址
+        int afterConsequencePos = instructions.size();
+        changeOperand(jumpNotTruthyPos, afterConsequencePos);
+
+        // 6. 編譯 alternative 或推入 null
+        if (ifExpr.getAlternative() == null) {
+            emit(Opcode.OP_NULL);
+        } else {
+            compile(ifExpr.getAlternative());
+            if (lastInstructionIs(Opcode.OP_POP)) {
+                removeLastPop();
+            }
+        }
+
+        // 7. 回填無條件跳轉的目標地址
+        int afterAlternativePos = instructions.size();
+        changeOperand(jumpPos, afterAlternativePos);
+    }
+
+    /**
      * 發射一條指令
      */
     private int emit(Opcode op, int... operands) {
         byte[] ins = Instructions.make(op, operands);
         int pos = addInstruction(ins);
+        setLastInstruction(op, pos);
         return pos;
     }
 
@@ -145,6 +197,49 @@ public class Compiler {
         int posNewInstruction = instructions.size();
         instructions.append(ins);
         return posNewInstruction;
+    }
+
+    /**
+     * Chapter 4: 設置最後發射的指令
+     */
+    private void setLastInstruction(Opcode op, int pos) {
+        previousInstruction = lastInstruction;
+        lastInstruction = new EmittedInstruction(op, pos);
+    }
+
+    /**
+     * Chapter 4: 檢查最後一條指令是否是指定的操作碼
+     */
+    private boolean lastInstructionIs(Opcode op) {
+        if (instructions.size() == 0) {
+            return false;
+        }
+        return lastInstruction != null && lastInstruction.opcode == op;
+    }
+
+    /**
+     * Chapter 4: 移除最後一條 OpPop 指令
+     *
+     * 這裡我們需要實際從指令序列中移除最後一條指令
+     * 由於 Instructions 使用 ArrayList<Byte>,我們需要移除最後一個字節
+     */
+    private void removeLastPop() {
+        if (lastInstruction == null || lastInstruction.opcode != Opcode.OP_POP) {
+            return;
+        }
+
+        // OpPop 只有 1 字節,直接移除
+        instructions.removeLast();
+
+        // 恢復到前一條指令
+        lastInstruction = previousInstruction;
+    }
+
+    /**
+     * Chapter 4: 修改指定位置的操作數
+     */
+    private void changeOperand(int opPos, int operand) {
+        instructions.changeOperand(opPos, operand);
     }
 
     /**
@@ -160,6 +255,19 @@ public class Compiler {
      */
     public Bytecode bytecode() {
         return new Bytecode(instructions, constants);
+    }
+
+    /**
+     * Chapter 4: 記錄發射的指令
+     */
+    private static class EmittedInstruction {
+        Opcode opcode;
+        int position;
+
+        EmittedInstruction(Opcode opcode, int position) {
+            this.opcode = opcode;
+            this.position = position;
+        }
     }
 
     /**

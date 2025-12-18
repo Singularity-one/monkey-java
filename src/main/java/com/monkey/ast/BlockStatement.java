@@ -4,26 +4,31 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * BlockStatement 代表區塊語句
- * 例如：{ x + y; }
+ * BlockStatement 表示塊語句
+ * { statement1; statement2; ... }
  */
 public class BlockStatement implements Statement {
-    private final Token token; // { token
-    private final List<Statement> statements;
+    private final Token token;                  // '{' token
+    private final List<Statement> statements;   // 語句列表
 
     public BlockStatement(Token token) {
         this.token = token;
         this.statements = new ArrayList<>();
     }
 
-    public void addStatement(Statement stmt) {
-        statements.add(stmt);
-    }
-
     public List<Statement> getStatements() {
         return statements;
     }
 
+    public void addStatement(Statement stmt) {
+        statements.add(stmt);
+    }
+
+    @Override
+    public void statementNode() {
+    }
+
+    @Override
     public Token getToken() {
         return token;
     }
@@ -35,10 +40,10 @@ public class BlockStatement implements Statement {
 
     @Override
     public String string() {
-        StringBuilder out = new StringBuilder();
+        StringBuilder sb = new StringBuilder();
         for (Statement stmt : statements) {
-            out.append(stmt.string());
+            sb.append(stmt.string());
         }
-        return out.toString();
+        return sb.toString();
     }
 }

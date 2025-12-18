@@ -2564,4 +2564,560 @@ a >= b → !(b > a)
 
 A: 因為 OpPop 清空了堆疊。lastPoppedStackElem 讓我們能獲取被彈出的值進行測試。
 
-**繼續加油!您的編譯器越來越強大了!** 🚀
+# Writing A Compiler In Java - Chapter 4: Conditionals
+
+## 🎯 本章目標
+
+在第四章中,我們添加了條件語句支持:
+
+1. ✅ **跳轉指令** - OpJump, OpJumpNotTruthy
+2. ✅ **Null 值** - OpNull
+3. ✅ **if/else 表達式** - 完整的條件語句
+4. ✅ **回填技術** - 處理未知的跳轉地址
+5. ✅ **OpPop 優化** - 移除不必要的 OpPop
+
+## 📁 新增和修改的文件
+
+### 核心文件 (修改)
+- `Opcode.java` - 添加 OpJump, OpJumpNotTruthy, OpNull
+- `Instructions.java` - 添加 replaceInstruction, changeOperand, removeLast
+- `Compiler.java` - 添加 if 表達式編譯,追蹤最後指令
+- `VM.java` - 添加跳轉指令執行,isTruthy 方法
+
+### 新增類
+- `EmittedInstruction.java` - 記錄發射的指令信息
+- `NullObject.java` - Null 值對象
+- `IfExpression.java` - if 表達式 AST 節點
+- `BlockStatement.java` - 塊語句 AST 節點
+
+### 測試文件 (更新)
+- `CompilerTest.java` - 添加條件語句測試
+- `VMTest.java` - 添加條件語句測試
+
+## 🚀 快速開始
+
+### 1. 編譯和測試
+
+```bash
+# 編譯
+mvn clean compile
+
+# 運行測試
+mvn test
+
+# 應該看到所有測試通過
+[INFO] Tests run: 3, Failures: 0 (CompilerTest)
+[INFO] Tests run: 3, Failures: 0 (VMTest)
+```
+
+### 2. 使用 REPL
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+測試條件語句:
+
+```
+>> if (true) { 10 }
+10
+>> if (false) { 10 }
+null
+>> if (1 < 2) { 10 } else { 20 }
+10
+>> if (1 > 2) { 10 } else { 20 }
+20
+>> if (5 > 3) { 1 + 2 } else { 3 + 4 }
+3
+```
+
+## 📚 核心概念
+
+### 1. 跳轉指令
+
+#### OpJump - 無條件跳轉
+
+```
+OpJump <address>
+```
+
+無條件跳轉到指定地址。
+
+**示例:**
+```
+0000 OpConstant 0
+0003 OpJump 0010     ; 跳到 0010
+0006 OpConstant 1    ; 被跳過
+0009 OpPop
+0010 OpConstant 2    ; 從這裡繼續
+```
+
+#### OpJumpNotTruthy - 條件跳轉
+
+```
+OpJumpNotTruthy <address>
+```
+
+彈出堆疊頂部元素,如果為 falsy 則跳轉。
+
+**示例:**
+```
+0000 OpTrue
+0001 OpJumpNotTruthy 0007  ; true 是 truthy,不跳轉
+0004 OpConstant 0          ; 執行這裡
+0007 ...
+```
+
+### 2. if 表達式編譯
+
+#### 無 else 分支
+
+```monkey
+if (condition) { consequence }
+```
+
+編譯為:
+
+```
+<condition>
+OpJumpNotTruthy <afterConsequence>
+<consequence>
+OpNull                      ; 隱式返回 null
+<afterConsequence>:
+```
+
+**示例:**
+```monkey
+if (1 < 2) { 10 }
+```
+
+編譯為:
+```
+0000 OpConstant 0      ; 1
+0003 OpConstant 1      ; 2
+0006 OpGreaterThan     ; 2 > 1 (注意: < 轉換為 >)
+0007 OpJumpNotTruthy 13
+0010 OpConstant 2      ; 10
+0013 OpNull            ; 如果條件為假
+```
+
+#### 有 else 分支
+
+```monkey
+if (condition) { consequence } else { alternative }
+```
+
+編譯為:
+
+```
+<condition>
+OpJumpNotTruthy <alternative>
+<consequence>
+OpJump <afterAlternative>
+<alternative>:
+<alternative>
+<afterAlternative>:
+```
+
+**示例:**
+```monkey
+if (true) { 10 } else { 20 }
+```
+
+編譯為:
+```
+0000 OpTrue
+0001 OpJumpNotTruthy 10
+0004 OpConstant 0      ; 10
+0007 OpJump 13
+0010 OpConstant 1      ; 20
+0013 ...
+```
+
+### 3. 回填技術
+
+**問題:** 編譯跳轉指令時,不知道跳轉目標的地址
+
+**解決:** 先發射帶佔位符的指令,後續回填真實地址
+
+```java
+// 1. 發射條件跳轉 (地址未知,用 9999 佔位)
+int jumpPos = emit(Opcode.OP_JUMP_NOT_TRUTHY, 9999);
+
+// 2. 編譯 consequence
+compile(ifExpr.getConsequence());
+
+// 3. 現在知道跳轉目標了,回填地址
+int afterConsequence = instructions.size();
+changeOperand(jumpPos, afterConsequence);
+```
+
+**changeOperand 實現:**
+```java
+public void changeOperand(int opPos, int operand) {
+    Opcode op = Opcode.fromByte(bytes.get(opPos));
+    byte[] newInstruction = make(op, operand);
+    replaceInstruction(opPos, newInstruction);
+}
+```
+
+### 4. OpPop 優化
+
+**問題:** if 表達式的值需要留在堆疊上,但 consequence 和 alternative 編譯時會添加 OpPop
+
+```monkey
+if (true) { 10 }  // 10 應該留在堆疊上
+```
+
+未優化的編譯結果:
+```
+OpTrue
+OpJumpNotTruthy ...
+OpConstant 0   ; 10
+OpPop          ; ← 不應該有這個!
+...
+```
+
+**解決:** 編譯 if 表達式後,移除 consequence 和 alternative 末尾的 OpPop
+
+```java
+// 編譯 consequence
+compile(ifExpr.getConsequence());
+
+// 移除末尾的 OpPop
+if (lastInstructionIs(Opcode.OP_POP)) {
+    removeLastPop();
+}
+```
+
+**removeLastPop 實現:**
+```java
+private void removeLastPop() {
+    if (lastInstruction != null && 
+        lastInstruction.getOpcode() == Opcode.OP_POP) {
+        instructions.removeLast(1);  // OpPop 是 1 字節
+        lastInstruction = previousInstruction;
+    }
+}
+```
+
+### 5. Truthiness (真值判斷)
+
+**Monkey 的真值規則:**
+
+| 值 | Truthy/Falsy |
+|----|--------------|
+| false | Falsy |
+| null | Falsy |
+| 0 | **Truthy** ⚠️ |
+| "" | **Truthy** ⚠️ |
+| 其他 | Truthy |
+
+**注意:** 與 JavaScript 不同,Monkey 中 0 和空字符串是 truthy!
+
+**實現:**
+```java
+private boolean isTruthy(MonkeyObject obj) {
+    if (obj == NULL) return false;
+    if (obj == TRUE) return true;
+    if (obj == FALSE) return false;
+    return true;  // 其他都是 truthy
+}
+```
+
+## 🔍 詳細實現
+
+### 編譯流程示例
+
+#### 示例 1: `if (1 < 2) { 10 } else { 20 }`
+
+**步驟 1: 編譯條件**
+```
+compile(1 < 2)
+→ OpConstant 1 (索引 1, 值 2)
+→ OpConstant 0 (索引 0, 值 1)
+→ OpGreaterThan
+```
+
+**步驟 2: 發射條件跳轉**
+```
+emit(OpJumpNotTruthy, 9999)
+→ 位置: 7
+→ 佔位符: 9999
+```
+
+**步驟 3: 編譯 consequence**
+```
+compile(10)
+→ OpConstant 2 (索引 2, 值 10)
+移除 OpPop
+```
+
+**步驟 4: 發射無條件跳轉**
+```
+emit(OpJump, 9999)
+→ 位置: 10
+```
+
+**步驟 5: 回填條件跳轉**
+```
+afterConsequence = 13
+changeOperand(7, 13)
+```
+
+**步驟 6: 編譯 alternative**
+```
+compile(20)
+→ OpConstant 3 (索引 3, 值 20)
+移除 OpPop
+```
+
+**步驟 7: 回填無條件跳轉**
+```
+afterAlternative = 16
+changeOperand(10, 16)
+```
+
+**最終字節碼:**
+```
+Constants: [1, 2, 10, 20]
+
+Instructions:
+0000 OpConstant 1      ; 2
+0003 OpConstant 0      ; 1
+0006 OpGreaterThan     ; 2 > 1 = true
+0007 OpJumpNotTruthy 13
+0010 OpConstant 2      ; 10
+0013 OpJump 16
+0016 OpConstant 3      ; 20
+```
+
+**執行:**
+```
+stack: []
+→ OpConstant 1  → stack: [2]
+→ OpConstant 0  → stack: [2, 1]
+→ OpGreaterThan → stack: [true]
+→ OpJumpNotTruthy 13
+   ↓ true 是 truthy,不跳轉
+→ OpConstant 2  → stack: [10]
+→ OpJump 16     → 跳到結束
+結果: 10
+```
+
+#### 示例 2: `if (false) { 10 }`
+
+**編譯:**
+```
+Constants: [10]
+
+Instructions:
+0000 OpFalse
+0001 OpJumpNotTruthy 7
+0004 OpConstant 0  ; 10
+0007 OpNull        ; 沒有 else
+```
+
+**執行:**
+```
+stack: []
+→ OpFalse            → stack: [false]
+→ OpJumpNotTruthy 7  → false 是 falsy,跳轉!
+→ OpNull             → stack: [null]
+結果: null
+```
+
+### EmittedInstruction 的作用
+
+**問題:** 如何追蹤最後發射的指令?
+
+**解決:** 使用 EmittedInstruction 記錄操作碼和位置
+
+```java
+public class EmittedInstruction {
+    private final Opcode opcode;
+    private final int position;
+}
+
+// Compiler 中維護
+private EmittedInstruction lastInstruction;
+private EmittedInstruction previousInstruction;
+
+private void setLastInstruction(Opcode op, int pos) {
+    previousInstruction = lastInstruction;
+    lastInstruction = new EmittedInstruction(op, pos);
+}
+```
+
+**使用場景:**
+1. 檢查最後一條指令是否是 OpPop
+2. 移除最後一條指令時恢復狀態
+
+## 📊 新增操作碼總覽
+
+| 操作碼 | 操作數 | 功能 | 堆疊變化 |
+|--------|--------|------|----------|
+| OpJumpNotTruthy | 2字節地址 | 條件跳轉 | [cond] → [] |
+| OpJump | 2字節地址 | 無條件跳轉 | 無變化 |
+| OpNull | 無 | 推入null | [] → [null] |
+
+**總計:** Chapter 4 後共 16 個操作碼
+
+## 🎓 重要概念
+
+### 1. 控制流
+
+編譯器通過跳轉指令實現控制流:
+- **順序執行:** 不需要特殊處理
+- **條件執行:** OpJumpNotTruthy
+- **跳過代碼:** OpJump
+
+### 2. 表達式 vs 語句
+
+**if 在 Monkey 中是表達式:**
+```monkey
+let x = if (true) { 10 } else { 20 };
+// x = 10
+```
+
+這意味著:
+- if 必須有返回值
+- 無 else 分支時返回 null
+- 需要留值在堆疊上
+
+### 3. 兩次編譯問題
+
+**挑戰:** 編譯器需要知道跳轉目標,但目標在編譯時還不存在
+
+**解決方案:**
+1. **兩次編譯** - 第一次收集信息,第二次生成代碼 (複雜)
+2. **回填** - 先用佔位符,後續修改 (簡單,我們的選擇)
+
+## 💡 設計決策
+
+### 1. 為什麼需要移除 OpPop?
+
+```monkey
+if (true) { 10 }
+```
+
+如果不移除 OpPop:
+```
+OpTrue
+OpJumpNotTruthy ...
+OpConstant 0   ; 10
+OpPop          ; 10 被彈出了!
+OpNull
+```
+
+堆疊上會留下 null 而不是 10。
+
+移除後:
+```
+OpTrue
+OpJumpNotTruthy ...
+OpConstant 0   ; 10 留在堆疊上
+OpNull
+```
+
+### 2. 為什麼用 9999 作為佔位符?
+
+- 明顯的"錯誤"值
+- 如果忘記回填,容易發現
+- 不會與真實地址混淆
+
+### 3. 為什麼 null 是單例?
+
+```java
+public static final NullObject NULL = new NullObject();
+```
+
+- 只需要一個 null 對象
+- 可以用 == 比較
+- 節省記憶體
+
+## 🧪 測試要點
+
+### 編譯器測試
+
+驗證生成的字節碼結構:
+```java
+new CompilerTestCase(
+    "if (true) { 10 }; 3333;",
+    new Object[]{10, 3333},  // 常量池
+    new byte[][]{
+        Instructions.make(Opcode.OP_TRUE),
+        Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
+        Instructions.make(Opcode.OP_CONSTANT, 0),
+        Instructions.make(Opcode.OP_JUMP, 11),
+        Instructions.make(Opcode.OP_NULL),
+        Instructions.make(Opcode.OP_POP),
+        Instructions.make(Opcode.OP_CONSTANT, 1),
+        Instructions.make(Opcode.OP_POP)
+    }
+);
+```
+
+### 虛擬機測試
+
+驗證執行結果:
+```java
+new VMTestCase("if (true) { 10 }", 10),
+new VMTestCase("if (false) { 10 }", VM.NULL),
+new VMTestCase("if (1 < 2) { 10 } else { 20 }", 10),
+new VMTestCase("if (1 > 2) { 10 } else { 20 }", 20)
+```
+
+## 🎉 完成第四章!
+
+你現在擁有:
+
+✅ **跳轉指令** - OpJump, OpJumpNotTruthy  
+✅ **條件語句** - if/else 表達式  
+✅ **回填技術** - 處理未知地址  
+✅ **Null 值** - OpNull  
+✅ **OpPop 優化** - 移除不必要的指令  
+✅ **控制流** - 完整的條件執行
+
+## 📚 下一步: Chapter 5
+
+第五章將添加:
+
+- **全局變數** - let 語句
+- **符號表** - 追蹤變數
+- **OpSetGlobal, OpGetGlobal** - 全局變數指令
+- **變數作用域** - 名稱解析
+
+## 🔧 常見問題
+
+### Q: 為什麼 if 需要是表達式?
+
+A: Monkey 設計為"表達式導向"語言,一切都有值。這使得代碼更簡潔:
+```monkey
+let x = if (condition) { 10 } else { 20 };
+```
+
+### Q: 為什麼 0 是 truthy?
+
+A: 這是 Monkey 的設計選擇。不同語言有不同規則:
+- JavaScript: 0 是 falsy
+- Python: 0 是 falsy
+- Ruby: 0 是 truthy
+- **Monkey: 0 是 truthy**
+
+### Q: 回填會影響性能嗎?
+
+A: 不會。回填發生在編譯時,不影響運行時性能。而且我們只修改少數指令。
+
+### Q: 可以嵌套 if 嗎?
+
+A: 可以!編譯器遞歸處理:
+```monkey
+if (1 < 2) {
+    if (2 < 3) {
+        10
+    }
+}
+```
+
+

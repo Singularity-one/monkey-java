@@ -3,43 +3,48 @@ package com.monkey.ast;
 import com.monkey.token.Token;
 
 /**
- * IfExpression 代表 if 表達式
- * 例如：if (x < y) { x } else { y }
+ * IfExpression 表示 if 表達式
+ * if (<condition>) <consequence> else <alternative>
  */
 public class IfExpression implements Expression {
-    private final Token token; // if token
-    private Expression condition;
-    private BlockStatement consequence;
-    private BlockStatement alternative;
+    private final Token token;                // 'if' token
+    private Expression condition;             // 條件表達式
+    private BlockStatement consequence;       // if 分支
+    private BlockStatement alternative;       // else 分支 (可選)
 
     public IfExpression(Token token) {
         this.token = token;
-    }
-
-    public void setCondition(Expression condition) {
-        this.condition = condition;
-    }
-
-    public void setConsequence(BlockStatement consequence) {
-        this.consequence = consequence;
-    }
-
-    public void setAlternative(BlockStatement alternative) {
-        this.alternative = alternative;
     }
 
     public Expression getCondition() {
         return condition;
     }
 
+    public void setCondition(Expression condition) {
+        this.condition = condition;
+    }
+
     public BlockStatement getConsequence() {
         return consequence;
+    }
+
+    public void setConsequence(BlockStatement consequence) {
+        this.consequence = consequence;
     }
 
     public BlockStatement getAlternative() {
         return alternative;
     }
 
+    public void setAlternative(BlockStatement alternative) {
+        this.alternative = alternative;
+    }
+
+    @Override
+    public void expressionNode() {
+    }
+
+    @Override
     public Token getToken() {
         return token;
     }
@@ -51,17 +56,17 @@ public class IfExpression implements Expression {
 
     @Override
     public String string() {
-        StringBuilder out = new StringBuilder();
-        out.append("if");
-        out.append(condition.string());
-        out.append(" ");
-        out.append(consequence.string());
+        StringBuilder sb = new StringBuilder();
+        sb.append("if");
+        sb.append(condition.string());
+        sb.append(" ");
+        sb.append(consequence.string());
 
         if (alternative != null) {
-            out.append("else ");
-            out.append(alternative.string());
+            sb.append("else ");
+            sb.append(alternative.string());
         }
 
-        return out.toString();
+        return sb.toString();
     }
 }

@@ -106,6 +106,35 @@ public class VM {
                 case OP_POP:
                     pop();
                     break;
+                case OP_JUMP:
+                    // 讀取跳轉目標地址（2 字節）
+                    int dest = Instructions.readUint16(new byte[]{
+                            instructions.get(ip + 1),
+                            instructions.get(ip + 2)
+                    });
+                    // 更新 ip。注意：循環末尾有 ip++，所以這裡設為 dest - 1
+                    ip = dest - 1;
+                    break;
+
+                case OP_JUMP_NOT_TRUTHY:
+                    // 讀取跳轉目標地址（2 字節）
+                    int pos = Instructions.readUint16(new byte[]{
+                            instructions.get(ip + 1),
+                            instructions.get(ip + 2)
+                    });
+                    // 先讓 ip 跳過這 2 字節的操作數
+                    ip += 2;
+
+                    MonkeyObject condition = pop();
+                    if (!isTruthy(condition)) {
+                        // 如果條件為假，跳轉到目標地址
+                        ip = pos - 1;
+                    }
+                    break;
+
+                case OP_NULL:
+                    push(NullObject.NULL);
+                    break;
             }
         }
     }
@@ -281,5 +310,15 @@ public class VM {
         public VMException(String message) {
             super(message);
         }
+    }
+
+    private boolean isTruthy(MonkeyObject obj) {
+        if (obj instanceof BooleanObject) {
+            return ((BooleanObject) obj).getValue();
+        } else if (obj == NullObject.NULL) {
+            return false;
+        }
+        // 在 Monkey 語言中，除了 false 和 null，其餘皆為真（包括 0）
+        return true;
     }
 }
