@@ -12,21 +12,36 @@ import java.util.List;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 4: Conditionals
+ * Chapter 5: Keeping Track of Names (擴展)
+ *
+ * 新增功能:
+ * - let 語句編譯
+ * - 標識符編譯
+ * - 符號表管理
  */
 public class Compiler {
     private final Instructions instructions;
     private final List<MonkeyObject> constants;
 
-    // Chapter 4: 追蹤最後發射的指令
     private EmittedInstruction lastInstruction;
     private EmittedInstruction previousInstruction;
+
+    // Chapter 5: 符號表
+    private final SymbolTable symbolTable;
 
     public Compiler() {
         this.instructions = new Instructions();
         this.constants = new ArrayList<>();
-        this.lastInstruction = null;
-        this.previousInstruction = null;
+        this.symbolTable = new SymbolTable();
+    }
+
+    /**
+     * 帶符號表的構造函數 (用於測試)
+     */
+    public Compiler(SymbolTable symbolTable) {
+        this.instructions = new Instructions();
+        this.constants = new ArrayList<>();
+        this.symbolTable = symbolTable;
     }
 
     /**
@@ -45,20 +60,21 @@ public class Compiler {
             emit(Opcode.OP_POP);
         }
         else if (node instanceof BlockStatement) {
-            // Chapter 4: 區塊語句
             BlockStatement block = (BlockStatement) node;
             for (Statement stmt : block.getStatements()) {
                 compile(stmt);
             }
         }
+        else if (node instanceof LetStatement) {
+            // Chapter 5: 編譯 let 語句
+            compileLetStatement((LetStatement) node);
+        }
         else if (node instanceof IfExpression) {
-            // Chapter 4: if 表達式
             compileIfExpression((IfExpression) node);
         }
         else if (node instanceof InfixExpression) {
             InfixExpression infixExpr = (InfixExpression) node;
 
-            // 特殊處理: < 轉換為 >
             if (infixExpr.getOperator().equals("<")) {
                 compile(infixExpr.getRight());
                 compile(infixExpr.getLeft());
@@ -123,59 +139,81 @@ public class Compiler {
                 emit(Opcode.OP_FALSE);
             }
         }
+        else if (node instanceof Identifier) {
+            // Chapter 5: 編譯標識符
+            compileIdentifier((Identifier) node);
+        }
     }
 
     /**
-     * Chapter 4: 編譯 if 表達式
+     * Chapter 5: 編譯 let 語句
      *
-     * 編譯模式:
-     * 有 else:
-     *   <condition>
-     *   OpJumpNotTruthy <afterConsequence>
-     *   <consequence>
-     *   OpJump <afterAlternative>
-     *   <alternative>
+     * let x = 10;
      *
-     * 無 else:
-     *   <condition>
-     *   OpJumpNotTruthy <afterConsequence>
-     *   <consequence>
-     *   OpJump <afterNull>
-     *   OpNull
+     * 編譯為:
+     *   <compile value>
+     *   OpSetGlobal <index>
+     */
+    private void compileLetStatement(LetStatement letStmt) throws CompilerException {
+        // 1. 編譯值表達式
+        compile(letStmt.getValue());
+
+        // 2. 在符號表中定義變量
+        Symbol symbol = symbolTable.define(letStmt.getName().getValue());
+
+        // 3. 發射 SetGlobal 指令
+        emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
+    }
+
+    /**
+     * Chapter 5: 編譯標識符
+     *
+     * x
+     *
+     * 編譯為:
+     *   OpGetGlobal <index>
+     */
+    private void compileIdentifier(Identifier ident) throws CompilerException {
+        // 1. 在符號表中查找變量
+        Symbol symbol = symbolTable.resolve(ident.getValue());
+
+        if (symbol == null) {
+            throw new CompilerException("undefined variable " + ident.getValue());
+        }
+
+        // 2. 發射 GetGlobal 指令
+        emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
+    }
+
+    /**
+     * 編譯 if 表達式
      */
     private void compileIfExpression(IfExpression ifExpr) throws CompilerException {
-        // 1. 編譯條件
         compile(ifExpr.getCondition());
 
-        // 2. 發射條件跳轉 (先用假地址 9999)
         int jumpNotTruthyPos = emit(Opcode.OP_JUMP_NOT_TRUTHY, 9999);
 
-        // 3. 編譯 consequence
         compile(ifExpr.getConsequence());
 
-        // 移除 consequence 末尾的 OpPop
         if (lastInstructionIs(Opcode.OP_POP)) {
             removeLastPop();
         }
 
-        // 4. 發射無條件跳轉 (跳過 alternative)
         int jumpPos = emit(Opcode.OP_JUMP, 9999);
 
-        // 5. 回填條件跳轉的目標地址
         int afterConsequencePos = instructions.size();
         changeOperand(jumpNotTruthyPos, afterConsequencePos);
 
-        // 6. 編譯 alternative 或推入 null
         if (ifExpr.getAlternative() == null) {
             emit(Opcode.OP_NULL);
         } else {
             compile(ifExpr.getAlternative());
+
             if (lastInstructionIs(Opcode.OP_POP)) {
                 removeLastPop();
             }
         }
 
-        // 7. 回填無條件跳轉的目標地址
         int afterAlternativePos = instructions.size();
         changeOperand(jumpPos, afterAlternativePos);
     }
@@ -200,7 +238,7 @@ public class Compiler {
     }
 
     /**
-     * Chapter 4: 設置最後發射的指令
+     * 設置最後發射的指令
      */
     private void setLastInstruction(Opcode op, int pos) {
         previousInstruction = lastInstruction;
@@ -208,35 +246,27 @@ public class Compiler {
     }
 
     /**
-     * Chapter 4: 檢查最後一條指令是否是指定的操作碼
+     * 檢查最後一條指令是否是指定的操作碼
      */
     private boolean lastInstructionIs(Opcode op) {
         if (instructions.size() == 0) {
             return false;
         }
-        return lastInstruction != null && lastInstruction.opcode == op;
+        return lastInstruction != null && lastInstruction.getOpcode() == op;
     }
 
     /**
-     * Chapter 4: 移除最後一條 OpPop 指令
-     *
-     * 這裡我們需要實際從指令序列中移除最後一條指令
-     * 由於 Instructions 使用 ArrayList<Byte>,我們需要移除最後一個字節
+     * 移除最後一條 OpPop 指令
      */
     private void removeLastPop() {
-        if (lastInstruction == null || lastInstruction.opcode != Opcode.OP_POP) {
-            return;
+        if (lastInstruction != null && lastInstruction.getOpcode() == Opcode.OP_POP) {
+            instructions.removeLast(1);
+            lastInstruction = previousInstruction;
         }
-
-        // OpPop 只有 1 字節,直接移除
-        instructions.removeLast();
-
-        // 恢復到前一條指令
-        lastInstruction = previousInstruction;
     }
 
     /**
-     * Chapter 4: 修改指定位置的操作數
+     * 修改指定位置的操作數
      */
     private void changeOperand(int opPos, int operand) {
         instructions.changeOperand(opPos, operand);
@@ -258,16 +288,10 @@ public class Compiler {
     }
 
     /**
-     * Chapter 4: 記錄發射的指令
+     * 獲取符號表 (用於測試)
      */
-    private static class EmittedInstruction {
-        Opcode opcode;
-        int position;
-
-        EmittedInstruction(Opcode opcode, int position) {
-            this.opcode = opcode;
-            this.position = position;
-        }
+    public SymbolTable getSymbolTable() {
+        return symbolTable;
     }
 
     /**

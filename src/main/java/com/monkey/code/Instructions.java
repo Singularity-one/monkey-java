@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Instructions 表示字節碼指令序列
- * Chapter 4: Conditionals (擴展)
+ * Chapter 5: Keeping Track of Names (擴展)
  */
 public class Instructions {
     private final List<Byte> bytes;
@@ -39,12 +39,16 @@ public class Instructions {
         DEFINITIONS.put(Opcode.OP_MINUS, new Definition("OpMinus", new int[]{}));
         DEFINITIONS.put(Opcode.OP_BANG, new Definition("OpBang", new int[]{}));
 
-        // Chapter 4 - 跳轉指令 (2 字節操作數: 跳轉目標地址)
+        // Chapter 4 - 跳轉指令
         DEFINITIONS.put(Opcode.OP_JUMP_NOT_TRUTHY, new Definition("OpJumpNotTruthy", new int[]{2}));
         DEFINITIONS.put(Opcode.OP_JUMP, new Definition("OpJump", new int[]{2}));
 
         // Chapter 4 - Null 值
         DEFINITIONS.put(Opcode.OP_NULL, new Definition("OpNull", new int[]{}));
+
+        // Chapter 5 - 全局變量 (2 字節操作數: 全局變量索引)
+        DEFINITIONS.put(Opcode.OP_SET_GLOBAL, new Definition("OpSetGlobal", new int[]{2}));
+        DEFINITIONS.put(Opcode.OP_GET_GLOBAL, new Definition("OpGetGlobal", new int[]{2}));
     }
 
     public Instructions() {
@@ -139,20 +143,12 @@ public class Instructions {
         }
     }
 
-    /**
-     * 替換指定位置的指令
-     * Chapter 4: 用於回填跳轉地址
-     */
     public void replaceInstruction(int pos, byte[] newInstruction) {
         for (int i = 0; i < newInstruction.length; i++) {
             bytes.set(pos + i, newInstruction[i]);
         }
     }
 
-    /**
-     * 修改指定位置的操作數
-     * Chapter 4: 用於回填跳轉地址
-     */
     public void changeOperand(int opPos, int operand) {
         Opcode op = Opcode.fromByte(bytes.get(opPos));
         byte[] newInstruction = make(op, operand);
@@ -165,6 +161,14 @@ public class Instructions {
 
     public byte get(int index) {
         return bytes.get(index);
+    }
+
+    public void removeLast(int n) {
+        for (int i = 0; i < n; i++) {
+            if (!bytes.isEmpty()) {
+                bytes.remove(bytes.size() - 1);
+            }
+        }
     }
 
     public byte[] toByteArray() {
@@ -249,12 +253,6 @@ public class Instructions {
 
         public int[] getOperandWidths() {
             return operandWidths;
-        }
-    }
-
-    public void removeLast() {
-        if (!bytes.isEmpty()) {
-            bytes.remove(bytes.size() - 1);
         }
     }
 }

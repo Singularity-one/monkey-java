@@ -2,11 +2,10 @@ package com.monkey.code;
 
 /**
  * Opcode 表示字節碼操作碼
- * Chapter 4: Conditionals
+ * Chapter 5: Keeping Track of Names
  *
  * 新增:
- * - 跳轉指令 (Jump, JumpNotTruthy)
- * - Null 值 (Null)
+ * - 全局變量指令 (SetGlobal, GetGlobal)
  */
 public enum Opcode {
     // Chapter 2 - 基礎指令
@@ -33,11 +32,15 @@ public enum Opcode {
     OP_BANG((byte) 12),         // 邏輯非 (!x)
 
     // Chapter 4 - 跳轉指令
-    OP_JUMP_NOT_TRUTHY((byte) 13), // 條件跳轉: 如果頂部元素為 falsy 則跳轉
+    OP_JUMP_NOT_TRUTHY((byte) 13), // 條件跳轉
     OP_JUMP((byte) 14),            // 無條件跳轉
 
     // Chapter 4 - Null 值
-    OP_NULL((byte) 15);         // 推入 null
+    OP_NULL((byte) 15),         // 推入 null
+
+    // Chapter 5 - 全局變量
+    OP_SET_GLOBAL((byte) 16),   // 設置全局變量
+    OP_GET_GLOBAL((byte) 17);   // 獲取全局變量
 
     private final byte value;
 

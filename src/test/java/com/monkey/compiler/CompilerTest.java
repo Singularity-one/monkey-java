@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 編譯器測試
- * Chapter 4: Conditionals
+ * Chapter 5: Keeping Track of Names
  */
 public class CompilerTest {
 
@@ -47,12 +47,25 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_TRUE),
                                 Instructions.make(Opcode.OP_POP)
                         }
-                ),
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    @Test
+    public void testConditionals() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
                 new CompilerTestCase(
-                        "false",
-                        new Object[]{},
+                        "if (true) { 10 }; 3333;",
+                        new Object[]{10, 3333},
                         new byte[][]{
-                                Instructions.make(Opcode.OP_FALSE),
+                                Instructions.make(Opcode.OP_TRUE),
+                                Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_JUMP, 11),
+                                Instructions.make(Opcode.OP_NULL),
+                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -61,55 +74,40 @@ public class CompilerTest {
     }
 
     /**
-     * Chapter 4: 測試條件語句編譯
+     * Chapter 5: 測試全局 let 語句編譯
      */
     @Test
-    public void testConditionals() {
+    public void testGlobalLetStatements() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
-                // if (true) { 10 }; 3333;
                 new CompilerTestCase(
-                        "if (true) { 10 }; 3333;",
-                        new Object[]{10, 3333},
+                        "let one = 1; let two = 2;",
+                        new Object[]{1, 2},
                         new byte[][]{
-                                // 0000
-                                Instructions.make(Opcode.OP_TRUE),
-                                // 0001
-                                Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
-                                // 0004
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
-                                // 0007
-                                Instructions.make(Opcode.OP_JUMP, 11),
-                                // 0010
-                                Instructions.make(Opcode.OP_NULL),
-                                // 0011
-                                Instructions.make(Opcode.OP_POP),
-                                // 0012
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
-                                // 0015
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 1)
+                        }
+                ),
+                new CompilerTestCase(
+                        "let one = 1; one;",
+                        new Object[]{1},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
-
-                // if (true) { 10 } else { 20 }; 3333;
                 new CompilerTestCase(
-                        "if (true) { 10 } else { 20 }; 3333;",
-                        new Object[]{10, 20, 3333},
+                        "let one = 1; let two = one; two;",
+                        new Object[]{1},
                         new byte[][]{
-                                // 0000
-                                Instructions.make(Opcode.OP_TRUE),
-                                // 0001
-                                Instructions.make(Opcode.OP_JUMP_NOT_TRUTHY, 10),
-                                // 0004
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
-                                // 0007
-                                Instructions.make(Opcode.OP_JUMP, 13),
-                                // 0010
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                // 0013
-                                Instructions.make(Opcode.OP_POP),
-                                // 0014
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
-                                // 0017
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 1),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 1),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )

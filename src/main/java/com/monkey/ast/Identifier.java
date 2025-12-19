@@ -1,13 +1,14 @@
 package com.monkey.ast;
+
 import com.monkey.token.Token;
 
 /**
- * Identifier 代表識別符號
- * 例如：let x = 5; 中的 x
+ * Identifier 表示標識符
+ * 例如: x, y, foobar
  */
 public class Identifier implements Expression {
-    private final Token token; // TokenType.IDENT
-    private final String value;
+    private final Token token;   // IDENT token
+    private final String value;  // 標識符名稱
 
     public Identifier(Token token, String value) {
         this.token = token;
@@ -18,6 +19,11 @@ public class Identifier implements Expression {
         return value;
     }
 
+    @Override
+    public void expressionNode() {
+    }
+
+    @Override
     public Token getToken() {
         return token;
     }

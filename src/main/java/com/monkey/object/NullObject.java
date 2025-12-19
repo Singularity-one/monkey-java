@@ -8,7 +8,7 @@ public class NullObject implements MonkeyObject {
     // 單例模式
     public static final NullObject NULL = new NullObject();
 
-    private NullObject() {
+    public NullObject() {
     }
 
     @Override

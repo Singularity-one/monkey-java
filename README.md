@@ -3120,4 +3120,636 @@ if (1 < 2) {
 }
 ```
 
+# Writing A Compiler In Java - Chapter 5: Keeping Track of Names
+
+## 🎯 本章目標
+
+在第五章中,我們添加了變量支持:
+
+1. ✅ **符號表** - 追蹤變量名稱和索引
+2. ✅ **全局變量指令** - OpSetGlobal, OpGetGlobal
+3. ✅ **let 語句編譯** - 變量定義
+4. ✅ **標識符編譯** - 變量引用
+5. ✅ **全局變量存儲** - VM 中的全局變量數組
+
+## 📁 新增和修改的文件
+
+### 核心文件 (修改)
+- `Opcode.java` - 添加 OpSetGlobal, OpGetGlobal
+- `Instructions.java` - 更新操作碼定義
+- `Compiler.java` - 添加 let 語句和標識符編譯
+- `VM.java` - 添加全局變量存儲和指令執行
+
+### 新增類
+- `Symbol.java` - 符號定義
+- `SymbolScope.java` - 符號作用域枚舉
+- `SymbolTable.java` - 符號表實現
+- `LetStatement.java` - let 語句 AST 節點
+- `Identifier.java` - 標識符 AST 節點
+
+### 測試文件 (新增/更新)
+- `SymbolTableTest.java` - 符號表測試
+- `CompilerTest.java` - 添加 let 語句測試
+- `VMTest.java` - 添加全局變量測試
+
+## 🚀 快速開始
+
+### 1. 編譯和測試
+
+```bash
+# 編譯
+mvn clean compile
+
+# 運行測試
+mvn test
+
+# 應該看到所有測試通過
+[INFO] Tests run: 3, Failures: 0 (SymbolTableTest)
+[INFO] Tests run: 4, Failures: 0 (CompilerTest)
+[INFO] Tests run: 4, Failures: 0 (VMTest)
+```
+
+### 2. 使用 REPL
+
+```bash
+mvn exec:java -Dexec.mainClass="com.monkey.Main"
+```
+
+測試全局變量:
+
+```
+>> let x = 10
+>> x
+10
+>> let y = 20
+>> x + y
+30
+>> let z = x + y
+>> z
+30
+```
+
+## 📚 核心概念
+
+### 1. 符號表
+
+符號表是編譯器用來追蹤變量的數據結構。
+
+**作用:**
+- 記錄變量名稱
+- 分配唯一索引
+- 區分不同作用域
+
+**結構:**
+```java
+public class SymbolTable {
+    private Map<String, Symbol> store;  // 名稱 → 符號
+    private int numDefinitions;         // 已定義數量
+    
+    public Symbol define(String name) {
+        Symbol symbol = new Symbol(name, GLOBAL, numDefinitions);
+        store.put(name, symbol);
+        numDefinitions++;
+        return symbol;
+    }
+    
+    public Symbol resolve(String name) {
+        return store.get(name);
+    }
+}
+```
+
+**Symbol 結構:**
+```java
+public class Symbol {
+    private String name;         // 變量名
+    private SymbolScope scope;   // 作用域
+    private int index;           // 索引
+}
+```
+
+### 2. 全局變量指令
+
+#### OpSetGlobal - 設置全局變量
+
+```
+OpSetGlobal <index>
+```
+
+從堆疊彈出值並存儲到全局變量數組。
+
+**示例:**
+```monkey
+let x = 10;
+```
+
+編譯為:
+```
+0000 OpConstant 0    ; 10
+0003 OpSetGlobal 0   ; globals[0] = 10
+```
+
+執行:
+```
+stack: []
+→ OpConstant 0  → stack: [10]
+→ OpSetGlobal 0 → stack: [], globals[0] = 10
+```
+
+#### OpGetGlobal - 獲取全局變量
+
+```
+OpGetGlobal <index>
+```
+
+從全局變量數組載入值並推入堆疊。
+
+**示例:**
+```monkey
+x
+```
+
+編譯為:
+```
+0000 OpGetGlobal 0   ; push globals[0]
+0003 OpPop
+```
+
+執行:
+```
+stack: []
+→ OpGetGlobal 0 → stack: [10]  (假設 globals[0] = 10)
+→ OpPop         → stack: []
+```
+
+### 3. let 語句編譯
+
+#### 編譯流程
+
+```monkey
+let x = 5 + 5;
+```
+
+**步驟:**
+
+1. **編譯值表達式**
+   ```
+   compile(5 + 5)
+   → OpConstant 0    ; 5
+   → OpConstant 1    ; 5
+   → OpAdd
+   ```
+
+2. **在符號表中定義變量**
+   ```java
+   Symbol symbol = symbolTable.define("x");
+   // symbol = Symbol{name='x', scope=GLOBAL, index=0}
+   ```
+
+3. **發射 OpSetGlobal 指令**
+   ```
+   → OpSetGlobal 0
+   ```
+
+**完整字節碼:**
+```
+0000 OpConstant 0    ; 5
+0003 OpConstant 1    ; 5
+0006 OpAdd           ; 10
+0007 OpSetGlobal 0   ; globals[0] = 10
+```
+
+### 4. 標識符編譯
+
+#### 編譯流程
+
+```monkey
+x
+```
+
+**步驟:**
+
+1. **在符號表中查找變量**
+   ```java
+   Symbol symbol = symbolTable.resolve("x");
+   if (symbol == null) {
+       throw new CompilerException("undefined variable x");
+   }
+   ```
+
+2. **發射 OpGetGlobal 指令**
+   ```java
+   emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
+   ```
+
+**字節碼:**
+```
+0000 OpGetGlobal 0
+0003 OpPop
+```
+
+### 5. 全局變量存儲
+
+VM 使用數組存儲全局變量:
+
+```java
+private static final int GLOBALS_SIZE = 65536;
+private final MonkeyObject[] globals;
+```
+
+**特點:**
+- 固定大小: 65536 個槽位
+- 索引: 0-65535
+- 與 OpConstant 類似,操作數是 2 字節
+
+**執行:**
+```java
+case OP_SET_GLOBAL:
+    int index = readUint16(...);
+    globals[index] = pop();
+    break;
+
+case OP_GET_GLOBAL:
+    int index = readUint16(...);
+    push(globals[index]);
+    break;
+```
+
+## 🔍 詳細實現
+
+### 編譯流程示例
+
+#### 示例 1: `let x = 1; let y = 2; x + y`
+
+**編譯:**
+
+```
+// let x = 1
+OpConstant 0      ; 1
+OpSetGlobal 0     ; globals[0] = 1
+
+// let y = 2
+OpConstant 1      ; 2
+OpSetGlobal 1     ; globals[1] = 2
+
+// x + y
+OpGetGlobal 0     ; load globals[0]
+OpGetGlobal 1     ; load globals[1]
+OpAdd
+OpPop
+```
+
+**符號表狀態:**
+```
+{
+  "x" → Symbol{name='x', scope=GLOBAL, index=0},
+  "y" → Symbol{name='y', scope=GLOBAL, index=1}
+}
+```
+
+**執行:**
+```
+globals: [null, null, ...]
+
+OpConstant 0      → stack: [1]
+OpSetGlobal 0     → stack: [], globals: [1, null, ...]
+
+OpConstant 1      → stack: [2]
+OpSetGlobal 1     → stack: [], globals: [1, 2, ...]
+
+OpGetGlobal 0     → stack: [1]
+OpGetGlobal 1     → stack: [1, 2]
+OpAdd             → stack: [3]
+OpPop             → stack: []
+```
+
+#### 示例 2: `let one = 1; let two = one; two`
+
+**編譯:**
+
+```
+// let one = 1
+OpConstant 0      ; 1
+OpSetGlobal 0     ; globals[0] = 1
+
+// let two = one
+OpGetGlobal 0     ; load one
+OpSetGlobal 1     ; globals[1] = one
+
+// two
+OpGetGlobal 1     ; load two
+OpPop
+```
+
+**符號表狀態:**
+```
+{
+  "one" → Symbol{name='one', scope=GLOBAL, index=0},
+  "two" → Symbol{name='two', scope=GLOBAL, index=1}
+}
+```
+
+**執行:**
+```
+globals: [null, null, ...]
+
+OpConstant 0      → stack: [1]
+OpSetGlobal 0     → stack: [], globals: [1, null, ...]
+
+OpGetGlobal 0     → stack: [1]
+OpSetGlobal 1     → stack: [], globals: [1, 1, ...]
+
+OpGetGlobal 1     → stack: [1]
+OpPop             → stack: []
+```
+
+### 符號表實現
+
+#### define() 方法
+
+```java
+public Symbol define(String name) {
+    // Chapter 5: 所有變量都是全局的
+    Symbol symbol = new Symbol(name, SymbolScope.GLOBAL, numDefinitions);
+    store.put(name, symbol);
+    numDefinitions++;
+    return symbol;
+}
+```
+
+**特點:**
+- 自動遞增索引
+- Chapter 5 中所有變量都是 GLOBAL 作用域
+- Chapter 7 會添加 LOCAL 作用域
+
+#### resolve() 方法
+
+```java
+public Symbol resolve(String name) {
+    Symbol symbol = store.get(name);
+    
+    // 如果當前作用域找不到,嘗試在外層作用域查找
+    if (symbol == null && outer != null) {
+        return outer.resolve(name);
+    }
+    
+    return symbol;
+}
+```
+
+**特點:**
+- Chapter 5 中 outer 始終為 null
+- Chapter 7 會使用嵌套符號表
+
+### REPL 中保持狀態
+
+**問題:** 每次編譯都創建新的 VM,全局變量會丟失
+
+```
+>> let x = 10
+>> x
+undefined variable x  // 錯誤!
+```
+
+**解決:** 在多次編譯之間共享全局變量數組
+
+```java
+MonkeyObject[] globals = new MonkeyObject[VM.GLOBALS_SIZE];
+SymbolTable symbolTable = new SymbolTable();
+
+while (true) {
+    String input = readLine();
+    Program program = parse(input);
+    
+    Compiler compiler = new Compiler(symbolTable);  // 共享符號表
+    compiler.compile(program);
+    
+    VM vm = new VM(compiler.bytecode(), globals);   // 共享 globals
+    vm.run();
+}
+```
+
+## 💡 設計決策
+
+### 1. 為什麼用索引而不是名稱?
+
+**使用索引:**
+```
+OpGetGlobal 0     ; 3 字節
+```
+
+**使用名稱:**
+```
+OpGetGlobal "x"   ; 1 + len("x") 字節
+```
+
+**優點:**
+- ✅ 指令更短
+- ✅ 執行更快 (數組訪問 vs 哈希查找)
+- ✅ 固定長度指令
+
+### 2. 為什麼全局變量數組大小是 65536?
+
+因為操作數是 2 字節:
+- 2 字節 = 16 位
+- 2^16 = 65536
+
+與 OpConstant 一致。
+
+### 3. 為什麼需要符號表?
+
+**沒有符號表:**
+- 編譯器如何知道 `x` 的索引?
+- 如何檢測未定義的變量?
+
+**有符號表:**
+```java
+// 定義時
+Symbol symbol = symbolTable.define("x");  // index = 0
+
+// 使用時
+Symbol symbol = symbolTable.resolve("x"); // 找到 index = 0
+if (symbol == null) {
+    throw new CompilerException("undefined variable");
+}
+```
+
+### 4. 為什麼 OpSetGlobal 不推入值?
+
+**當前行為:**
+```monkey
+let x = 10;
+```
+```
+OpConstant 0    → stack: [10]
+OpSetGlobal 0   → stack: []  (彈出值)
+```
+
+**如果推入值:**
+```
+OpConstant 0    → stack: [10]
+OpSetGlobal 0   → stack: [10]  (保留值)
+OpPop           → stack: []
+```
+
+多一條 OpPop 指令,沒有必要。
+
+## 📊 新增操作碼總覽
+
+| 操作碼 | 操作數 | 功能 | 堆疊變化 |
+|--------|--------|------|----------|
+| OpSetGlobal | 2字節索引 | 設置全局變量 | [val] → [] |
+| OpGetGlobal | 2字節索引 | 獲取全局變量 | [] → [val] |
+
+**總計:** Chapter 5 後共 18 個操作碼
+
+## 🎓 重要概念
+
+### 1. 編譯時 vs 運行時
+
+**編譯時:**
+- 符號表
+- 名稱解析
+- 索引分配
+
+**運行時:**
+- 全局變量數組
+- 索引訪問
+- 值存取
+
+### 2. 名稱綁定
+
+```monkey
+let x = 10;  // 綁定 "x" 到值 10
+```
+
+**編譯器視角:**
+- "x" → 索引 0
+- 存儲映射關係
+
+**VM 視角:**
+- 索引 0 → 值 10
+- 不知道名稱 "x"
+
+### 3. 作用域
+
+Chapter 5 中所有變量都是全局的:
+
+```monkey
+let x = 10;
+if (true) {
+    let y = 20;  // y 也是全局的
+    x + y        // 可以訪問
+}
+y  // 可以訪問!
+```
+
+Chapter 7 會添加局部作用域。
+
+## 🧪 測試要點
+
+### 符號表測試
+
+```java
+@Test
+public void testDefine() {
+    SymbolTable global = new SymbolTable();
+    
+    Symbol a = global.define("a");
+    assertEquals(0, a.getIndex());
+    
+    Symbol b = global.define("b");
+    assertEquals(1, b.getIndex());
+}
+
+@Test
+public void testResolveGlobal() {
+    SymbolTable global = new SymbolTable();
+    global.define("a");
+    
+    Symbol symbol = global.resolve("a");
+    assertNotNull(symbol);
+    assertEquals("a", symbol.getName());
+}
+```
+
+### 編譯器測試
+
+```java
+new CompilerTestCase(
+    "let one = 1; let two = 2;",
+    new Object[]{1, 2},
+    new byte[][]{
+        Instructions.make(Opcode.OP_CONSTANT, 0),
+        Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+        Instructions.make(Opcode.OP_CONSTANT, 1),
+        Instructions.make(Opcode.OP_SET_GLOBAL, 1)
+    }
+);
+```
+
+### 虛擬機測試
+
+```java
+new VMTestCase("let one = 1; one", 1),
+new VMTestCase("let one = 1; let two = 2; one + two", 3),
+new VMTestCase("let one = 1; let two = one + one; one + two", 3)
+```
+
+## 🎉 完成第五章!
+
+你現在擁有:
+
+✅ **符號表** - 追蹤變量名稱和索引  
+✅ **全局變量** - OpSetGlobal, OpGetGlobal  
+✅ **let 語句** - 變量定義  
+✅ **標識符** - 變量引用  
+✅ **名稱解析** - 編譯時檢查未定義變量
+
+## 📚 下一步: Chapter 6
+
+第六章將添加:
+
+- **字符串** - 字符串字面量
+- **數組** - 數組字面量和索引
+- **哈希表** - 哈希字面量和索引
+- **OpArray, OpHash, OpIndex** - 新的數據結構指令
+
+## 🔧 常見問題
+
+### Q: 為什麼不直接存儲值,而要用索引?
+
+A: 因為字節碼需要固定長度。索引是 2 字節,而值可能是任意大小(字符串、數組等)。
+
+### Q: globals 數組會不會太大?
+
+A: 不會。65536 個指針只占用約 512KB (64位系統)。而且大部分槽位是 null。
+
+### Q: 可以重複定義變量嗎?
+
+A: Chapter 5 中可以:
+```monkey
+let x = 1;
+let x = 2;  // 會創建新的索引
+```
+這是設計缺陷,實際語言應該報錯。
+
+### Q: 未使用的變量會怎樣?
+
+A: 它們占用索引但不影響執行:
+```monkey
+let x = 1;
+let y = 2;
+x  // y 未使用但占用索引 1
+```
+
+## 📖 參考資料
+
+- [原書: Writing A Compiler In Go](https://compilerbook.com/)
+- [您的項目: monkey-java](https://github.com/Singularity-one/monkey-java)
+
+---
+
+**繼續加油!您的編譯器現在支持變量了!** 🚀
+
 

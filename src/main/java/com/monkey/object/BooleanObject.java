@@ -11,7 +11,7 @@ public class BooleanObject implements MonkeyObject, Hashable{
     public static final BooleanObject TRUE = new BooleanObject(true);
     public static final BooleanObject FALSE = new BooleanObject(false);
 
-    private BooleanObject(boolean value) {
+    public BooleanObject(boolean value) {
         this.value = value;
     }
 

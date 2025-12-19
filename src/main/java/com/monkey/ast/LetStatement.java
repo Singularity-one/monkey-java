@@ -3,34 +3,39 @@ package com.monkey.ast;
 import com.monkey.token.Token;
 
 /**
- * LetStatement 代表 let 語句
- * 例如：let x = 5;
+ * LetStatement 表示 let 語句
+ * let <identifier> = <expression>;
  */
 public class LetStatement implements Statement {
-    private final Token token; // TokenType.LET
-    private Identifier name;
-    private Expression value;
+    private final Token token;       // 'let' token
+    private Identifier name;         // 變量名
+    private Expression value;        // 值表達式
 
     public LetStatement(Token token) {
         this.token = token;
-    }
-
-    public void setName(Identifier name) {
-        this.name = name;
-    }
-
-    public void setValue(Expression value) {
-        this.value = value;
     }
 
     public Identifier getName() {
         return name;
     }
 
+    public void setName(Identifier name) {
+        this.name = name;
+    }
+
     public Expression getValue() {
         return value;
     }
 
+    public void setValue(Expression value) {
+        this.value = value;
+    }
+
+    @Override
+    public void statementNode() {
+    }
+
+    @Override
     public Token getToken() {
         return token;
     }
@@ -42,16 +47,15 @@ public class LetStatement implements Statement {
 
     @Override
     public String string() {
-        StringBuilder out = new StringBuilder();
-        out.append(tokenLiteral()).append(" ");
-        out.append(name.string());
-        out.append(" = ");
-
+        StringBuilder sb = new StringBuilder();
+        sb.append(tokenLiteral());
+        sb.append(" ");
+        sb.append(name.string());
+        sb.append(" = ");
         if (value != null) {
-            out.append(value.string());
+            sb.append(value.string());
         }
-
-        out.append(";");
-        return out.toString();
+        sb.append(";");
+        return sb.toString();
     }
 }

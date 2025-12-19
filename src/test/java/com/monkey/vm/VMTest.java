@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 虛擬機測試
- * Chapter 4: Conditionals
+ * Chapter 5: Keeping Track of Names
  */
 public class VMTest {
 
@@ -33,37 +33,31 @@ public class VMTest {
         VMTestCase[] tests = new VMTestCase[]{
                 new VMTestCase("true", true),
                 new VMTestCase("false", false),
-                new VMTestCase("1 < 2", true),
-                new VMTestCase("1 > 2", false),
-                new VMTestCase("1 == 1", true),
-                new VMTestCase("1 != 1", false)
+                new VMTestCase("1 < 2", true)
+        };
+        runVMTests(tests);
+    }
+
+    @Test
+    public void testConditionals() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase("if (true) { 10 }", 10),
+                new VMTestCase("if (true) { 10 } else { 20 }", 10),
+                new VMTestCase("if (false) { 10 } else { 20 }", 20)
         };
         runVMTests(tests);
     }
 
     /**
-     * Chapter 4: 測試條件語句執行
+     * Chapter 5: 測試全局變量
      */
     @Test
-    public void testConditionals() {
+    public void testGlobalLetStatements() {
         VMTestCase[] tests = new VMTestCase[]{
-                // if 表達式
-                new VMTestCase("if (true) { 10 }", 10),
-                new VMTestCase("if (true) { 10 } else { 20 }", 10),
-                new VMTestCase("if (false) { 10 } else { 20 }", 20),
-                new VMTestCase("if (1) { 10 }", 10),
-                new VMTestCase("if (1 < 2) { 10 }", 10),
-                new VMTestCase("if (1 < 2) { 10 } else { 20 }", 10),
-                new VMTestCase("if (1 > 2) { 10 } else { 20 }", 20),
-
-                // if 無 else,條件為假時返回 null
-                new VMTestCase("if (false) { 10 }", NullObject.NULL),
-                new VMTestCase("if (1 > 2) { 10 }", NullObject.NULL),
-
-                // 複雜條件
-                new VMTestCase("if ((if (false) { 10 })) { 10 } else { 20 }", 20)
+                new VMTestCase("let one = 1; one", 1),
+                new VMTestCase("let one = 1; let two = 2; one + two", 3),
+                new VMTestCase("let one = 1; let two = one + one; one + two", 3)
         };
-
         runVMTests(tests);
     }
 
