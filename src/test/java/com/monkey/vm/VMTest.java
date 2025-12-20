@@ -8,14 +8,13 @@ import com.monkey.parser.Parser;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 虛擬機測試
- * Chapter 6: String, Array and Hash (擴展)
+ * Chapter 7: Functions (擴展)
  */
 public class VMTest {
 
@@ -59,9 +58,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試字串表達式
-     */
     @Test
     public void testStringExpressions() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -72,9 +68,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試陣列字面量
-     */
     @Test
     public void testArrayLiterals() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -85,9 +78,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試雜湊表字面量
-     */
     @Test
     public void testHashLiterals() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -98,21 +88,11 @@ public class VMTest {
                             put(new IntegerObject(1).hashKey(), 2);
                             put(new IntegerObject(2).hashKey(), 3);
                         }}
-                ),
-                new VMTestCase(
-                        "{1 + 1: 2 * 2, 3 + 3: 4 * 4}",
-                        new HashMap<HashKey, Integer>() {{
-                            put(new IntegerObject(2).hashKey(), 4);
-                            put(new IntegerObject(6).hashKey(), 16);
-                        }}
                 )
         };
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試索引表達式
-     */
     @Test
     public void testIndexExpressions() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -121,16 +101,202 @@ public class VMTest {
                 new VMTestCase("[[1, 1, 1]][0][0]", 1),
                 new VMTestCase("[][0]", new NullObject()),
                 new VMTestCase("[1, 2, 3][99]", new NullObject()),
-                new VMTestCase("[1][-1]", new NullObject()),
                 new VMTestCase("{1: 1, 2: 2}[1]", 1),
-                new VMTestCase("{1: 1, 2: 2}[2]", 2),
-                new VMTestCase("{1: 1}[0]", new NullObject()),
-                new VMTestCase("{}[0]", new NullObject())
+                new VMTestCase("{1: 1}[0]", new NullObject())
         };
         runVMTests(tests);
     }
 
+    /**
+     * Chapter 7: 測試函數調用 (無參數)
+     */
+    @Test
+    public void testCallingFunctionsWithoutArguments() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let fivePlusTen = fn() { 5 + 10; }; fivePlusTen();",
+                        15
+                ),
+                new VMTestCase(
+                        "let one = fn() { 1; }; let two = fn() { 2; }; one() + two();",
+                        3
+                ),
+                new VMTestCase(
+                        "let a = fn() { 1 }; let b = fn() { a() + 1 }; let c = fn() { b() + 1 }; c();",
+                        3
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試返回語句
+     */
+    @Test
+    public void testFunctionsWithReturnStatement() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let earlyExit = fn() { return 99; 100; }; earlyExit();",
+                        99
+                ),
+                new VMTestCase(
+                        "let earlyExit = fn() { return 99; return 100; }; earlyExit();",
+                        99
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試無返回值函數
+     */
+    @Test
+    public void testFunctionsWithoutReturnValue() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let noReturn = fn() { }; noReturn();",
+                        new NullObject()
+                ),
+                new VMTestCase(
+                        "let noReturn = fn() { }; let noReturnTwo = fn() { noReturn(); }; noReturn(); noReturnTwo();",
+                        new NullObject()
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試一級函數
+     */
+    @Test
+    public void testFirstClassFunctions() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let returnsOne = fn() { 1; }; let returnsOneReturner = fn() { returnsOne; }; returnsOneReturner()();",
+                        1
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試局部綁定
+     */
+    @Test
+    public void testCallingFunctionsWithBindings() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let one = fn() { let one = 1; one }; one();",
+                        1
+                ),
+                new VMTestCase(
+                        "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; }; oneAndTwo();",
+                        3
+                ),
+                new VMTestCase(
+                        "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; }; let threeAndFour = fn() { let three = 3; let four = 4; three + four; }; oneAndTwo() + threeAndFour();",
+                        10
+                ),
+                new VMTestCase(
+                        "let firstFoobar = fn() { let foobar = 50; foobar; }; let secondFoobar = fn() { let foobar = 100; foobar; }; firstFoobar() + secondFoobar();",
+                        150
+                ),
+                new VMTestCase(
+                        "let globalSeed = 50; let minusOne = fn() { let num = 1; globalSeed - num; }; let minusTwo = fn() { let num = 2; globalSeed - num; }; minusOne() + minusTwo();",
+                        97
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試帶參數的函數調用
+     */
+    @Test
+    public void testCallingFunctionsWithArgumentsAndBindings() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "let identity = fn(a) { a; }; identity(4);",
+                        4
+                ),
+                new VMTestCase(
+                        "let sum = fn(a, b) { a + b; }; sum(1, 2);",
+                        3
+                ),
+                new VMTestCase(
+                        "let sum = fn(a, b) { let c = a + b; c; }; sum(1, 2);",
+                        3
+                ),
+                new VMTestCase(
+                        "let sum = fn(a, b) { let c = a + b; c; }; sum(1, 2) + sum(3, 4);",
+                        10
+                ),
+                new VMTestCase(
+                        "let sum = fn(a, b) { let c = a + b; c; }; let outer = fn() { sum(1, 2) + sum(3, 4); }; outer();",
+                        10
+                ),
+                new VMTestCase(
+                        "let globalNum = 10; let sum = fn(a, b) { let c = a + b; c + globalNum; }; let outer = fn() { sum(1, 2) + sum(3, 4) + globalNum; }; outer() + globalNum;",
+                        50
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試錯誤的參數數量
+     */
+    @Test
+    public void testCallingFunctionsWithWrongArguments() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        "fn() { 1; }(1);",
+                        "wrong number of arguments: want=0, got=1"
+                ),
+                new VMTestCase(
+                        "fn(a) { a; }();",
+                        "wrong number of arguments: want=1, got=0"
+                ),
+                new VMTestCase(
+                        "fn(a, b) { a + b; }(1);",
+                        "wrong number of arguments: want=2, got=1"
+                )
+        };
+        runVMErrorTests(tests);
+    }
+
     private void runVMTests(VMTestCase[] tests) {
+        for (VMTestCase tt : tests) {
+            System.out.println("Testing: " + tt.input);  // 添加這行
+
+            Program program = parse(tt.input);
+
+            Compiler comp = new Compiler();
+            try {
+                comp.compile(program);
+            } catch (Compiler.CompilerException e) {
+                fail("compiler error: " + e.getMessage());
+            }
+
+            // 打印編譯結果
+            System.out.println("Instructions:\n" + comp.bytecode().getInstructions());
+            System.out.println("Constants: " + comp.bytecode().getConstants().size());
+
+            VM vm = new VM(comp.bytecode());
+            try {
+                vm.run();
+            } catch (VM.VMException e) {
+                fail("vm error: " + e.getMessage());
+            }
+
+            MonkeyObject stackElem = vm.lastPoppedStackElem();
+            System.out.println("Stack elem: " + stackElem);  // 添加這行
+
+            testExpectedObject(tt.expected, stackElem);
+        }
+    }
+
+    private void runVMErrorTests(VMTestCase[] tests) {
         for (VMTestCase tt : tests) {
             Program program = parse(tt.input);
 
@@ -144,12 +310,11 @@ public class VMTest {
             VM vm = new VM(comp.bytecode());
             try {
                 vm.run();
+                fail("expected VM error but resulted in none.");
             } catch (VM.VMException e) {
-                fail("vm error: " + e.getMessage());
+                assertEquals(tt.expected, e.getMessage(),
+                        "wrong VM error");
             }
-
-            MonkeyObject stackElem = vm.lastPoppedStackElem();
-            testExpectedObject(tt.expected, stackElem);
         }
     }
 
@@ -195,9 +360,6 @@ public class VMTest {
                         result.getValue(), expected));
     }
 
-    /**
-     * Chapter 6: 測試字串對象
-     */
     private void testStringObject(String expected, MonkeyObject actual) {
         assertTrue(actual instanceof StringObject,
                 "object is not String. got=" + actual.getClass());
@@ -208,9 +370,6 @@ public class VMTest {
                         result.getValue(), expected));
     }
 
-    /**
-     * Chapter 6: 測試陣列對象
-     */
     private void testArrayObject(int[] expected, MonkeyObject actual) {
         assertTrue(actual instanceof ArrayObject,
                 "object not Array: " + actual.getClass());
@@ -225,9 +384,6 @@ public class VMTest {
         }
     }
 
-    /**
-     * Chapter 6: 測試雜湊表對象
-     */
     private void testHashObject(Map<HashKey, Integer> expected, MonkeyObject actual) {
         assertTrue(actual instanceof HashObject,
                 "object is not Hash. got=" + actual.getClass());

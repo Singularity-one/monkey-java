@@ -5,44 +5,60 @@ import com.monkey.code.Opcode;
 import com.monkey.compiler.Bytecode;
 import com.monkey.object.*;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * VM 是棧式虛擬機
- * Chapter 6: String, Array and Hash (擴展)
- *
- * 新增功能:
- * - 字串連接運算
- * - 陣列構建和索引
- * - 雜湊表構建和索引
+ * Chapter 7: Functions (擴展)
  */
 public class VM {
     private static final int STACK_SIZE = 2048;
     private static final int GLOBALS_SIZE = 65536;
+    private static final int MAX_FRAMES = 1024;
 
     public static final BooleanObject TRUE = new BooleanObject(true);
     public static final BooleanObject FALSE = new BooleanObject(false);
     public static final NullObject NULL = new NullObject();
 
     private final List<MonkeyObject> constants;
-    private final Instructions instructions;
     private final MonkeyObject[] stack;
-    private int sp;
+    private int sp;  // 堆疊指針：指向下一個可用位置
     private final MonkeyObject[] globals;
+
+    private final Frame[] frames;
+    private int framesIndex;
 
     public VM(Bytecode bytecode) {
         this(bytecode, new MonkeyObject[GLOBALS_SIZE]);
     }
 
     public VM(Bytecode bytecode, MonkeyObject[] globals) {
-        this.instructions = bytecode.getInstructions();
         this.constants = bytecode.getConstants();
         this.stack = new MonkeyObject[STACK_SIZE];
         this.sp = 0;
         this.globals = globals;
+
+        this.frames = new Frame[MAX_FRAMES];
+        this.framesIndex = 1;
+
+        // 創建主幀
+        CompiledFunctionObject mainFn = new CompiledFunctionObject(bytecode.getInstructions());
+        Frame mainFrame = new Frame(mainFn, 0);
+        this.frames[0] = mainFrame;
+    }
+
+    private Frame currentFrame() {
+        return frames[framesIndex - 1];
+    }
+
+    private void pushFrame(Frame f) {
+        frames[framesIndex] = f;
+        framesIndex++;
+    }
+
+    private Frame popFrame() {
+        framesIndex--;
+        return frames[framesIndex];
     }
 
     public MonkeyObject stackTop() {
@@ -64,17 +80,24 @@ public class VM {
      * 運行虛擬機
      */
     public void run() throws VMException {
-        for (int ip = 0; ip < instructions.size(); ip++) {
-            byte opByte = instructions.get(ip);
-            Opcode op = Opcode.fromByte(opByte);
+        int ip;
+        Instructions ins;
+        Opcode op;
+
+        while (currentFrame().ip < currentFrame().instructions().size() - 1) {
+            currentFrame().ip++;
+
+            ip = currentFrame().ip;
+            ins = currentFrame().instructions();
+            op = Opcode.fromByte(ins.get(ip));
 
             switch (op) {
                 case OP_CONSTANT:
-                    byte[] constIndexBytes = new byte[2];
-                    constIndexBytes[0] = instructions.get(ip + 1);
-                    constIndexBytes[1] = instructions.get(ip + 2);
-                    int constIndex = Instructions.readUint16(constIndexBytes);
-                    ip += 2;
+                    int constIndex = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
                     push(constants.get(constIndex));
                     break;
 
@@ -108,23 +131,23 @@ public class VM {
                     break;
 
                 case OP_JUMP:
-                    byte[] posBytes = new byte[2];
-                    posBytes[0] = instructions.get(ip + 1);
-                    posBytes[1] = instructions.get(ip + 2);
-                    int pos = Instructions.readUint16(posBytes);
-                    ip = pos - 1;
+                    int pos = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip = pos - 1;
                     break;
 
                 case OP_JUMP_NOT_TRUTHY:
-                    posBytes = new byte[2];
-                    posBytes[0] = instructions.get(ip + 1);
-                    posBytes[1] = instructions.get(ip + 2);
-                    pos = Instructions.readUint16(posBytes);
-                    ip += 2;
+                    pos = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
 
                     MonkeyObject condition = pop();
                     if (!isTruthy(condition)) {
-                        ip = pos - 1;
+                        currentFrame().ip = pos - 1;
                     }
                     break;
 
@@ -133,54 +156,94 @@ public class VM {
                     break;
 
                 case OP_SET_GLOBAL:
-                    byte[] globalIndexBytes = new byte[2];
-                    globalIndexBytes[0] = instructions.get(ip + 1);
-                    globalIndexBytes[1] = instructions.get(ip + 2);
-                    int globalIndex = Instructions.readUint16(globalIndexBytes);
-                    ip += 2;
+                    int globalIndex = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
                     globals[globalIndex] = pop();
                     break;
 
                 case OP_GET_GLOBAL:
-                    globalIndexBytes = new byte[2];
-                    globalIndexBytes[0] = instructions.get(ip + 1);
-                    globalIndexBytes[1] = instructions.get(ip + 2);
-                    globalIndex = Instructions.readUint16(globalIndexBytes);
-                    ip += 2;
+                    globalIndex = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
                     push(globals[globalIndex]);
                     break;
 
-                // Chapter 6: 陣列指令
                 case OP_ARRAY:
-                    byte[] numElementsBytes = new byte[2];
-                    numElementsBytes[0] = instructions.get(ip + 1);
-                    numElementsBytes[1] = instructions.get(ip + 2);
-                    int numElements = Instructions.readUint16(numElementsBytes);
-                    ip += 2;
+                    int numElements = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
 
                     MonkeyObject array = buildArray(sp - numElements, sp);
                     sp = sp - numElements;
                     push(array);
                     break;
 
-                // Chapter 6: 雜湊表指令
                 case OP_HASH:
-                    numElementsBytes = new byte[2];
-                    numElementsBytes[0] = instructions.get(ip + 1);
-                    numElementsBytes[1] = instructions.get(ip + 2);
-                    numElements = Instructions.readUint16(numElementsBytes);
-                    ip += 2;
+                    numElements = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    currentFrame().ip += 2;
 
                     MonkeyObject hash = buildHash(sp - numElements, sp);
                     sp = sp - numElements;
                     push(hash);
                     break;
 
-                // Chapter 6: 索引指令
                 case OP_INDEX:
                     MonkeyObject index = pop();
                     MonkeyObject left = pop();
                     executeIndexExpression(left, index);
+                    break;
+
+                // Chapter 7: 函數調用
+                case OP_CALL:
+                    int numArgs = ins.get(ip + 1) & 0xFF;
+                    currentFrame().ip += 1;
+                    executeCall(numArgs);
+                    break;
+
+                // Chapter 7: 返回值
+                case OP_RETURN_VALUE:
+                    MonkeyObject returnValue = pop();
+
+                    Frame frame = popFrame();
+                    sp = frame.basePointer - 1;
+
+                    push(returnValue);
+                    break;
+
+                // Chapter 7: 返回 (無值)
+                case OP_RETURN:
+                    frame = popFrame();
+                    sp = frame.basePointer - 1;
+
+                    push(NULL);
+                    break;
+
+                // Chapter 7: 獲取局部變量
+                case OP_GET_LOCAL:
+                    int localIndex = ins.get(ip + 1) & 0xFF;
+                    currentFrame().ip += 1;
+
+                    Frame cf = currentFrame();
+                    push(stack[cf.basePointer + localIndex]);
+                    break;
+
+                // Chapter 7: 設置局部變量
+                case OP_SET_LOCAL:
+                    localIndex = ins.get(ip + 1) & 0xFF;
+                    currentFrame().ip += 1;
+
+                    cf = currentFrame();
+                    stack[cf.basePointer + localIndex] = pop();
                     break;
 
                 case OP_POP:
@@ -191,21 +254,49 @@ public class VM {
     }
 
     /**
-     * Chapter 6: 構建陣列
+     * Chapter 7: 執行函數調用
+     *
+     * 堆疊佈局（調用前）:
+     *   ... | fn | arg1 | arg2 | ... | argN | <- sp
+     *
+     * basePointer 指向第一個參數的位置
      */
+    private void executeCall(int numArgs) throws VMException {
+        MonkeyObject callee = stack[sp - 1 - numArgs];
+
+        if (!(callee instanceof CompiledFunctionObject)) {
+            throw new VMException("calling non-function");
+        }
+
+        CompiledFunctionObject fn = (CompiledFunctionObject) callee;
+
+        if (numArgs != fn.getNumParameters()) {
+            throw new VMException(
+                    String.format("wrong number of arguments: want=%d, got=%d",
+                            fn.getNumParameters(), numArgs)
+            );
+        }
+
+        // basePointer 指向堆疊上第一個參數的位置
+        // sp - numArgs 就是第一個參數的位置
+        Frame frame = new Frame(fn, sp - numArgs);
+        pushFrame(frame);
+
+        // 為局部變量分配空間
+        // 參數已經在堆疊上了，所以只需要為額外的局部變量分配空間
+        sp = frame.basePointer + fn.getNumLocals();
+    }
+
     private MonkeyObject buildArray(int startIndex, int endIndex) {
-        List<MonkeyObject> elements = new ArrayList<>();
+        java.util.List<MonkeyObject> elements = new java.util.ArrayList<>();
         for (int i = startIndex; i < endIndex; i++) {
             elements.add(stack[i]);
         }
         return new ArrayObject(elements);
     }
 
-    /**
-     * Chapter 6: 構建雜湊表
-     */
     private MonkeyObject buildHash(int startIndex, int endIndex) throws VMException {
-        Map<HashKey, HashObject.HashPair> hashedPairs = new HashMap<>();
+        java.util.Map<HashKey, HashObject.HashPair> hashedPairs = new java.util.HashMap<>();
 
         for (int i = startIndex; i < endIndex; i += 2) {
             MonkeyObject key = stack[i];
@@ -224,9 +315,6 @@ public class VM {
         return new HashObject(hashedPairs);
     }
 
-    /**
-     * Chapter 6: 執行索引表達式
-     */
     private void executeIndexExpression(MonkeyObject left, MonkeyObject index) throws VMException {
         if (left.type() == ObjectType.ARRAY && index.type() == ObjectType.INTEGER) {
             executeArrayIndex(left, index);
@@ -237,9 +325,6 @@ public class VM {
         }
     }
 
-    /**
-     * Chapter 6: 執行陣列索引
-     */
     private void executeArrayIndex(MonkeyObject array, MonkeyObject index) throws VMException {
         ArrayObject arrayObject = (ArrayObject) array;
         long i = ((IntegerObject) index).getValue();
@@ -253,9 +338,6 @@ public class VM {
         push(arrayObject.getElements().get((int) i));
     }
 
-    /**
-     * Chapter 6: 執行雜湊表索引
-     */
     private void executeHashIndex(MonkeyObject hash, MonkeyObject index) throws VMException {
         HashObject hashObject = (HashObject) hash;
 
@@ -274,9 +356,6 @@ public class VM {
         push(pair.value);
     }
 
-    /**
-     * Chapter 6: 執行二元運算（支援字串連接）
-     */
     private void executeBinaryOperation(Opcode op) throws VMException {
         MonkeyObject right = pop();
         MonkeyObject left = pop();
@@ -295,9 +374,6 @@ public class VM {
         }
     }
 
-    /**
-     * 執行二元整數運算
-     */
     private void executeBinaryIntegerOperation(Opcode op, MonkeyObject left, MonkeyObject right)
             throws VMException {
         long leftValue = ((IntegerObject) left).getValue();
@@ -327,9 +403,6 @@ public class VM {
         push(new IntegerObject(result));
     }
 
-    /**
-     * Chapter 6: 執行二元字串運算（字串連接）
-     */
     private void executeBinaryStringOperation(Opcode op, MonkeyObject left, MonkeyObject right)
             throws VMException {
         if (op != Opcode.OP_ADD) {
@@ -342,9 +415,6 @@ public class VM {
         push(new StringObject(leftValue + rightValue));
     }
 
-    /**
-     * 執行比較運算
-     */
     private void executeComparison(Opcode op) throws VMException {
         MonkeyObject right = pop();
         MonkeyObject left = pop();

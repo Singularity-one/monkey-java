@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Instructions 表示字節碼指令序列
- * Chapter 6: String, Array and Hash (擴展)
+ * Chapter 7: Functions (擴展)
  */
 public class Instructions {
     private final List<Byte> bytes;
@@ -50,10 +50,17 @@ public class Instructions {
         DEFINITIONS.put(Opcode.OP_SET_GLOBAL, new Definition("OpSetGlobal", new int[]{2}));
         DEFINITIONS.put(Opcode.OP_GET_GLOBAL, new Definition("OpGetGlobal", new int[]{2}));
 
-        // Chapter 6 - 複合數據類型（新增）
+        // Chapter 6 - 複合數據類型
         DEFINITIONS.put(Opcode.OP_ARRAY, new Definition("OpArray", new int[]{2}));
         DEFINITIONS.put(Opcode.OP_HASH, new Definition("OpHash", new int[]{2}));
         DEFINITIONS.put(Opcode.OP_INDEX, new Definition("OpIndex", new int[]{}));
+
+        // Chapter 7 - 函數操作碼定義
+        DEFINITIONS.put(Opcode.OP_CALL, new Definition("OpCall", new int[]{1}));         // 1 byte: 參數數量
+        DEFINITIONS.put(Opcode.OP_RETURN_VALUE, new Definition("OpReturnValue", new int[]{}));
+        DEFINITIONS.put(Opcode.OP_RETURN, new Definition("OpReturn", new int[]{}));
+        DEFINITIONS.put(Opcode.OP_GET_LOCAL, new Definition("OpGetLocal", new int[]{1}));  // 1 byte: 局部索引
+        DEFINITIONS.put(Opcode.OP_SET_LOCAL, new Definition("OpSetLocal", new int[]{1}));  // 1 byte: 局部索引
     }
 
     public Instructions() {
@@ -166,6 +173,14 @@ public class Instructions {
 
     public byte get(int index) {
         return bytes.get(index);
+    }
+
+    /**
+     * Chapter 7: 設置指定位置的字節 (用於替換指令)
+     * 這個方法被 replaceInstruction 內部使用，但我們也需要公開它
+     */
+    public void set(int index, byte value) {
+        bytes.set(index, value);
     }
 
     public void removeLast(int n) {

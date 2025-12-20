@@ -8,42 +8,68 @@ import com.monkey.object.*;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 6: String, Array and Hash (擴展)
- *
- * 新增功能:
- * - 字串字面量編譯
- * - 陣列字面量編譯
- * - 雜湊表字面量編譯
- * - 索引表達式編譯
+ * Chapter 7: Functions (擴展)
  */
 public class Compiler {
-    private final Instructions instructions;
     private final List<MonkeyObject> constants;
+    private SymbolTable symbolTable;  // ⚠️ 改為非 final，因為需要切換
 
-    private EmittedInstruction lastInstruction;
-    private EmittedInstruction previousInstruction;
-
-    private final SymbolTable symbolTable;
+    private final List<CompilationScope> scopes;
+    private int scopeIndex;
 
     public Compiler() {
-        this.instructions = new Instructions();
         this.constants = new ArrayList<>();
         this.symbolTable = new SymbolTable();
+        this.scopes = new ArrayList<>();
+        this.scopeIndex = 0;
+
+        CompilationScope mainScope = new CompilationScope();
+        scopes.add(mainScope);
     }
 
-    public Compiler(SymbolTable symbolTable) {
-        this.instructions = new Instructions();
-        this.constants = new ArrayList<>();
+    public Compiler(SymbolTable symbolTable, List<MonkeyObject> constants) {
+        this.constants = constants;
         this.symbolTable = symbolTable;
+        this.scopes = new ArrayList<>();
+        this.scopeIndex = 0;
+
+        CompilationScope mainScope = new CompilationScope();
+        scopes.add(mainScope);
     }
 
     /**
-     * 編譯 AST 節點
+     * Chapter 7: 進入新作用域
      */
+    private void enterScope() {
+        CompilationScope scope = new CompilationScope();
+        scopes.add(scope);
+        scopeIndex++;
+
+        // ⭐ 關鍵：創建新的符號表並封閉當前符號表
+        symbolTable = SymbolTable.newEnclosed(symbolTable);
+    }
+
+    /**
+     * Chapter 7: 離開當前作用域並返回指令
+     */
+    private Instructions leaveScope() {
+        Instructions instructions = currentInstructions();
+        scopes.remove(scopes.size() - 1);
+        scopeIndex--;
+
+        // ⭐ 關鍵：恢復外層符號表
+        symbolTable = symbolTable.getOuter();
+
+        return instructions;
+    }
+
+    private Instructions currentInstructions() {
+        return scopes.get(scopeIndex).getInstructions();
+    }
+
     public void compile(Node node) throws CompilerException {
         if (node instanceof Program) {
             Program program = (Program) node;
@@ -64,6 +90,9 @@ public class Compiler {
         }
         else if (node instanceof LetStatement) {
             compileLetStatement((LetStatement) node);
+        }
+        else if (node instanceof ReturnStatement) {
+            compileReturnStatement((ReturnStatement) node);
         }
         else if (node instanceof IfExpression) {
             compileIfExpression((IfExpression) node);
@@ -127,7 +156,6 @@ public class Compiler {
             IntegerObject integer = new IntegerObject(intLit.getValue());
             emit(Opcode.OP_CONSTANT, addConstant(integer));
         }
-        // Chapter 6: 字串字面量
         else if (node instanceof StringLiteral) {
             StringLiteral strLit = (StringLiteral) node;
             StringObject str = new StringObject(strLit.getValue());
@@ -141,17 +169,20 @@ public class Compiler {
                 emit(Opcode.OP_FALSE);
             }
         }
-        // Chapter 6: 陣列字面量
         else if (node instanceof ArrayLiteral) {
             compileArrayLiteral((ArrayLiteral) node);
         }
-        // Chapter 6: 雜湊表字面量
         else if (node instanceof HashLiteral) {
             compileHashLiteral((HashLiteral) node);
         }
-        // Chapter 6: 索引表達式
         else if (node instanceof IndexExpression) {
             compileIndexExpression((IndexExpression) node);
+        }
+        else if (node instanceof FunctionLiteral) {
+            compileFunctionLiteral((FunctionLiteral) node);
+        }
+        else if (node instanceof CallExpression) {
+            compileCallExpression((CallExpression) node);
         }
         else if (node instanceof Identifier) {
             compileIdentifier((Identifier) node);
@@ -159,97 +190,141 @@ public class Compiler {
     }
 
     /**
-     * Chapter 6: 編譯陣列字面量
-     *
-     * [1, 2, 3]
-     *
-     * 編譯為:
-     *   OpConstant 0  // 1
-     *   OpConstant 1  // 2
-     *   OpConstant 2  // 3
-     *   OpArray 3     // 構建包含 3 個元素的陣列
+     * Chapter 7: 編譯函數字面量
      */
-    private void compileArrayLiteral(ArrayLiteral array) throws CompilerException {
-        // 1. 編譯每個元素
-        for (Expression element : array.getElements()) {
-            compile(element);
+    private void compileFunctionLiteral(FunctionLiteral fn) throws CompilerException {
+        // 1. 進入新作用域（這會創建新的封閉符號表）
+        enterScope();
+
+        // 2. 定義參數為局部變量
+        for (Identifier param : fn.getParameters()) {
+            symbolTable.define(param.getValue());
         }
 
-        // 2. 發射 OpArray 指令，操作數是元素數量
-        emit(Opcode.OP_ARRAY, array.getElements().size());
-    }
+        // 3. 編譯函數體
+        compile(fn.getBody());
 
-    /**
-     * Chapter 6: 編譯雜湊表字面量
-     *
-     * {1: 2, 3: 4}
-     *
-     * 編譯為:
-     *   OpConstant 0  // 1 (key)
-     *   OpConstant 1  // 2 (value)
-     *   OpConstant 2  // 3 (key)
-     *   OpConstant 3  // 4 (value)
-     *   OpHash 4      // 構建包含 4 個元素 (2 對鍵值對) 的雜湊表
-     */
-    private void compileHashLiteral(HashLiteral hash) throws CompilerException {
-        // 1. 排序 keys 以保證順序一致性
-        List<Expression> keys = new ArrayList<>(hash.getPairs().keySet());
-        keys.sort(Comparator.comparing(Node::string));
-
-        // 2. 按順序編譯每對鍵值
-        for (Expression key : keys) {
-            compile(key);
-            compile(hash.getPairs().get(key));
+        // 4. 處理隱式返回
+        if (lastInstructionIs(Opcode.OP_POP)) {
+            replaceLastPopWithReturn();
+        }
+        if (!lastInstructionIs(Opcode.OP_RETURN_VALUE)) {
+            emit(Opcode.OP_RETURN);
         }
 
-        // 3. 發射 OpHash 指令，操作數是鍵值對總數 (keys + values)
-        emit(Opcode.OP_HASH, hash.getPairs().size() * 2);
+        // 5. 離開作用域前記錄局部變量數量
+        int numLocals = symbolTable.getNumDefinitions();
+
+        // 6. 離開作用域，獲取指令（這會恢復外層符號表）
+        Instructions instructions = leaveScope();
+
+        // 7. 創建 CompiledFunction
+        CompiledFunctionObject compiledFn = new CompiledFunctionObject(
+                instructions,
+                numLocals,
+                fn.getParameters().size()
+        );
+
+        // 8. 發射 OpConstant（在外層作用域中）
+        emit(Opcode.OP_CONSTANT, addConstant(compiledFn));
     }
 
     /**
-     * Chapter 6: 編譯索引表達式
-     *
-     * array[index]
-     *
-     * 編譯為:
-     *   <compile array>
-     *   <compile index>
-     *   OpIndex
+     * Chapter 7: 將最後的 OpPop 替換為 OpReturnValue
      */
-    private void compileIndexExpression(IndexExpression indexExpr) throws CompilerException {
-        // 1. 編譯被索引的對象
-        compile(indexExpr.getLeft());
-
-        // 2. 編譯索引
-        compile(indexExpr.getIndex());
-
-        // 3. 發射 OpIndex 指令
-        emit(Opcode.OP_INDEX);
+    private void replaceLastPopWithReturn() {
+        int lastPos = scopes.get(scopeIndex).getLastInstruction().getPosition();
+        replaceInstruction(lastPos, Instructions.make(Opcode.OP_RETURN_VALUE));
+        scopes.get(scopeIndex).getLastInstruction().setOpcode(Opcode.OP_RETURN_VALUE);
     }
 
     /**
-     * Chapter 5: 編譯 let 語句
+     * Chapter 7: 替換指定位置的指令
+     */
+    private void replaceInstruction(int pos, byte[] newInstruction) {
+        Instructions ins = currentInstructions();
+        for (int i = 0; i < newInstruction.length; i++) {
+            ins.set(pos + i, newInstruction[i]);
+        }
+    }
+
+    /**
+     * Chapter 7: 編譯函數調用
+     */
+    private void compileCallExpression(CallExpression call) throws CompilerException {
+        compile(call.getFunction());
+
+        for (Expression arg : call.getArguments()) {
+            compile(arg);
+        }
+
+        emit(Opcode.OP_CALL, call.getArguments().size());
+    }
+
+    /**
+     * Chapter 7: 編譯返回語句
+     */
+    private void compileReturnStatement(ReturnStatement returnStmt) throws CompilerException {
+        compile(returnStmt.getReturnValue());
+        emit(Opcode.OP_RETURN_VALUE);
+    }
+
+    /**
+     * Chapter 7: 編譯 let 語句 (支持局部變量)
      */
     private void compileLetStatement(LetStatement letStmt) throws CompilerException {
         compile(letStmt.getValue());
+
         Symbol symbol = symbolTable.define(letStmt.getName().getValue());
-        emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
+
+        if (symbol.getScope() == SymbolScope.GLOBAL) {
+            emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
+        } else {
+            emit(Opcode.OP_SET_LOCAL, symbol.getIndex());
+        }
     }
 
     /**
-     * Chapter 5: 編譯標識符
+     * Chapter 7: 編譯標識符 (支持局部變量)
      */
     private void compileIdentifier(Identifier ident) throws CompilerException {
         Symbol symbol = symbolTable.resolve(ident.getValue());
         if (symbol == null) {
             throw new CompilerException("undefined variable " + ident.getValue());
         }
-        emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
+
+        if (symbol.getScope() == SymbolScope.GLOBAL) {
+            emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
+        } else {
+            emit(Opcode.OP_GET_LOCAL, symbol.getIndex());
+        }
     }
 
-    /**
-     * 編譯 if 表達式
-     */
+    private void compileArrayLiteral(ArrayLiteral array) throws CompilerException {
+        for (Expression element : array.getElements()) {
+            compile(element);
+        }
+        emit(Opcode.OP_ARRAY, array.getElements().size());
+    }
+
+    private void compileHashLiteral(HashLiteral hash) throws CompilerException {
+        List<Expression> keys = new ArrayList<>(hash.getPairs().keySet());
+        keys.sort(Comparator.comparing(Node::string));
+
+        for (Expression key : keys) {
+            compile(key);
+            compile(hash.getPairs().get(key));
+        }
+
+        emit(Opcode.OP_HASH, hash.getPairs().size() * 2);
+    }
+
+    private void compileIndexExpression(IndexExpression indexExpr) throws CompilerException {
+        compile(indexExpr.getLeft());
+        compile(indexExpr.getIndex());
+        emit(Opcode.OP_INDEX);
+    }
+
     private void compileIfExpression(IfExpression ifExpr) throws CompilerException {
         compile(ifExpr.getCondition());
 
@@ -263,7 +338,7 @@ public class Compiler {
 
         int jumpPos = emit(Opcode.OP_JUMP, 9999);
 
-        int afterConsequencePos = instructions.size();
+        int afterConsequencePos = currentInstructions().size();
         changeOperand(jumpNotTruthyPos, afterConsequencePos);
 
         if (ifExpr.getAlternative() == null) {
@@ -276,7 +351,7 @@ public class Compiler {
             }
         }
 
-        int afterAlternativePos = instructions.size();
+        int afterAlternativePos = currentInstructions().size();
         changeOperand(jumpPos, afterAlternativePos);
     }
 
@@ -288,32 +363,36 @@ public class Compiler {
     }
 
     private int addInstruction(byte[] ins) {
-        int posNewInstruction = instructions.size();
-        instructions.append(ins);
+        int posNewInstruction = currentInstructions().size();
+        currentInstructions().append(ins);
         return posNewInstruction;
     }
 
     private void setLastInstruction(Opcode op, int pos) {
-        previousInstruction = lastInstruction;
-        lastInstruction = new EmittedInstruction(op, pos);
+        CompilationScope scope = scopes.get(scopeIndex);
+        scope.setPreviousInstruction(scope.getLastInstruction());
+        scope.setLastInstruction(new EmittedInstruction(op, pos));
     }
 
     private boolean lastInstructionIs(Opcode op) {
-        if (instructions.size() == 0) {
+        if (currentInstructions().size() == 0) {
             return false;
         }
-        return lastInstruction != null && lastInstruction.getOpcode() == op;
+        EmittedInstruction last = scopes.get(scopeIndex).getLastInstruction();
+        return last != null && last.getOpcode() == op;
     }
 
     private void removeLastPop() {
-        if (lastInstruction != null && lastInstruction.getOpcode() == Opcode.OP_POP) {
-            instructions.removeLast(1);
-            lastInstruction = previousInstruction;
+        CompilationScope scope = scopes.get(scopeIndex);
+        EmittedInstruction last = scope.getLastInstruction();
+        if (last != null && last.getOpcode() == Opcode.OP_POP) {
+            currentInstructions().removeLast(1);
+            scope.setLastInstruction(scope.getPreviousInstruction());
         }
     }
 
     private void changeOperand(int opPos, int operand) {
-        instructions.changeOperand(opPos, operand);
+        currentInstructions().changeOperand(opPos, operand);
     }
 
     private int addConstant(MonkeyObject obj) {
@@ -322,7 +401,7 @@ public class Compiler {
     }
 
     public Bytecode bytecode() {
-        return new Bytecode(instructions, constants);
+        return new Bytecode(currentInstructions(), constants);
     }
 
     public SymbolTable getSymbolTable() {

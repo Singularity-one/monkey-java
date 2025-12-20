@@ -1,48 +1,34 @@
 package com.monkey.code;
 
-/**
- * Opcode 表示字節碼操作碼
- * Chapter 6: String, Array and Hash
- */
 public enum Opcode {
-    // Chapter 2 - 基礎指令
     OP_CONSTANT((byte) 0),
     OP_ADD((byte) 1),
-    OP_POP((byte) 2),
-
-    // Chapter 3 - 算術運算
-    OP_SUB((byte) 3),
-    OP_MUL((byte) 4),
-    OP_DIV((byte) 5),
-
-    // Chapter 3 - 布爾值
+    OP_SUB((byte) 2),
+    OP_MUL((byte) 3),
+    OP_DIV((byte) 4),
+    OP_POP((byte) 5),
     OP_TRUE((byte) 6),
     OP_FALSE((byte) 7),
-
-    // Chapter 3 - 比較運算
     OP_EQUAL((byte) 8),
     OP_NOT_EQUAL((byte) 9),
     OP_GREATER_THAN((byte) 10),
-
-    // Chapter 3 - 前綴運算
     OP_MINUS((byte) 11),
     OP_BANG((byte) 12),
-
-    // Chapter 4 - 跳轉指令
     OP_JUMP_NOT_TRUTHY((byte) 13),
     OP_JUMP((byte) 14),
-
-    // Chapter 4 - Null 值
     OP_NULL((byte) 15),
+    OP_GET_GLOBAL((byte) 16),
+    OP_SET_GLOBAL((byte) 17),
+    OP_ARRAY((byte) 18),
+    OP_HASH((byte) 19),
+    OP_INDEX((byte) 20),
 
-    // Chapter 5 - 全局變量
-    OP_SET_GLOBAL((byte) 16),
-    OP_GET_GLOBAL((byte) 17),
-
-    // Chapter 6 - 複合數據類型（新增）
-    OP_ARRAY((byte) 18),        // 構建陣列
-    OP_HASH((byte) 19),         // 構建雜湊表
-    OP_INDEX((byte) 20);        // 索引運算
+    // Chapter 7 - 函數相關操作碼
+    OP_CALL((byte) 21),           // 調用函數 (操作數: 參數數量)
+    OP_RETURN_VALUE((byte) 22),   // 返回值
+    OP_RETURN((byte) 23),         // 返回 (無值)
+    OP_GET_LOCAL((byte) 24),      // 獲取局部變量 (操作數: 局部索引)
+    OP_SET_LOCAL((byte) 25);      // 設置局部變量 (操作數: 局部索引)
 
     private final byte value;
 

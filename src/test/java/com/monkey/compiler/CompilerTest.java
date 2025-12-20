@@ -8,13 +8,14 @@ import com.monkey.object.*;
 import com.monkey.parser.Parser;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 編譯器測試
- * Chapter 6: String, Array and Hash (擴展)
+ * Chapter 7: Functions (擴展)
  */
 public class CompilerTest {
 
@@ -83,37 +84,11 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
                                 Instructions.make(Opcode.OP_SET_GLOBAL, 1)
                         }
-                ),
-                new CompilerTestCase(
-                        "let one = 1; one;",
-                        new Object[]{1},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_POP)
-                        }
-                ),
-                new CompilerTestCase(
-                        "let one = 1; let two = one; two;",
-                        new Object[]{1},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_SET_GLOBAL, 1),
-                                Instructions.make(Opcode.OP_GET_GLOBAL, 1),
-                                Instructions.make(Opcode.OP_POP)
-                        }
                 )
         };
-
         runCompilerTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試字串表達式編譯
-     */
     @Test
     public void testStringExpressions() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -136,13 +111,9 @@ public class CompilerTest {
                         }
                 )
         };
-
         runCompilerTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試陣列字面量編譯
-     */
     @Test
     public void testArrayLiterals() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -164,32 +135,11 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_ARRAY, 3),
                                 Instructions.make(Opcode.OP_POP)
                         }
-                ),
-                new CompilerTestCase(
-                        "[1 + 2, 3 - 4, 5 * 6]",
-                        new Object[]{1, 2, 3, 4, 5, 6},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_ADD),
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
-                                Instructions.make(Opcode.OP_CONSTANT, 3),
-                                Instructions.make(Opcode.OP_SUB),
-                                Instructions.make(Opcode.OP_CONSTANT, 4),
-                                Instructions.make(Opcode.OP_CONSTANT, 5),
-                                Instructions.make(Opcode.OP_MUL),
-                                Instructions.make(Opcode.OP_ARRAY, 3),
-                                Instructions.make(Opcode.OP_POP)
-                        }
                 )
         };
-
         runCompilerTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試雜湊表字面量編譯
-     */
     @Test
     public void testHashLiterals() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -214,31 +164,11 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_HASH, 6),
                                 Instructions.make(Opcode.OP_POP)
                         }
-                ),
-                new CompilerTestCase(
-                        "{1: 2 + 3, 4: 5 * 6}",
-                        new Object[]{1, 2, 3, 4, 5, 6},
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
-                                Instructions.make(Opcode.OP_ADD),
-                                Instructions.make(Opcode.OP_CONSTANT, 3),
-                                Instructions.make(Opcode.OP_CONSTANT, 4),
-                                Instructions.make(Opcode.OP_CONSTANT, 5),
-                                Instructions.make(Opcode.OP_MUL),
-                                Instructions.make(Opcode.OP_HASH, 4),
-                                Instructions.make(Opcode.OP_POP)
-                        }
                 )
         };
-
         runCompilerTests(tests);
     }
 
-    /**
-     * Chapter 6: 測試索引表達式編譯
-     */
     @Test
     public void testIndexExpressions() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
@@ -256,23 +186,306 @@ public class CompilerTest {
                                 Instructions.make(Opcode.OP_INDEX),
                                 Instructions.make(Opcode.OP_POP)
                         }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試函數字面量編譯
+     */
+    @Test
+    public void testFunctions() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "fn() { return 5 + 10 }",
+                        new Object[]{
+                                5,
+                                10,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_CONSTANT, 1),
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_POP)
+                        }
                 ),
                 new CompilerTestCase(
-                        "{1: 2}[2 - 1]",
-                        new Object[]{1, 2, 2, 1},
+                        "fn() { 5 + 10 }",
+                        new Object[]{
+                                5,
+                                10,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_CONSTANT, 1),
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_HASH, 2),
                                 Instructions.make(Opcode.OP_CONSTANT, 2),
-                                Instructions.make(Opcode.OP_CONSTANT, 3),
-                                Instructions.make(Opcode.OP_SUB),
-                                Instructions.make(Opcode.OP_INDEX),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn() { 1; 2 }",
+                        new Object[]{
+                                1,
+                                2,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_CONSTANT, 1),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
         };
+        runCompilerTests(tests);
+    }
 
+    /**
+     * Chapter 7: 測試無返回值函數
+     */
+    @Test
+    public void testFunctionsWithoutReturnValue() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "fn() { }",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_RETURN)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試函數調用
+     */
+    @Test
+    public void testFunctionCalls() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "fn() { 24 }();",
+                        new Object[]{
+                                24,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CALL, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "let noArg = fn() { 24 }; noArg();",
+                        new Object[]{
+                                24,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CALL, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試局部作用域 let 語句
+     */
+    @Test
+    public void testLetStatementScopes() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "let num = 55; fn() { num }",
+                        new Object[]{
+                                55,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn() { let num = 55; num }",
+                        new Object[]{
+                                55,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn() { let a = 55; let b = 77; a + b }",
+                        new Object[]{
+                                55,
+                                77,
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 0),
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_CONSTANT, 1),
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試函數參數
+     */
+    @Test
+    public void testFunctionsWithArguments() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "fn(a) { a }",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn(a, b, c) { a; b; c }",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 2),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 7: 測試帶參數的函數調用
+     */
+    @Test
+    public void testFunctionCallsWithArguments() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "fn(a) { a }(24);",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                24
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CALL, 1),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "let oneArg = fn(a) { a }; oneArg(24);",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                24
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CALL, 1),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 2),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                24,
+                                25,
+                                26
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CONSTANT, 3),
+                                Instructions.make(Opcode.OP_CALL, 3),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
         runCompilerTests(tests);
     }
 
@@ -328,12 +541,32 @@ public class CompilerTest {
 
         for (int i = 0; i < expected.length; i++) {
             Object constant = expected[i];
+
             if (constant instanceof Integer) {
                 testIntegerObject((long) (int) constant, actual.get(i));
-            } else if (constant instanceof Boolean) {
-                testBooleanObject((boolean) constant, actual.get(i));
-            } else if (constant instanceof String) {
+            }
+            else if (constant instanceof String) {
                 testStringObject((String) constant, actual.get(i));
+            }
+            else if (constant instanceof Object[]) {
+                // Chapter 7: 處理 CompiledFunction 的指令
+                assertTrue(actual.get(i) instanceof CompiledFunctionObject,
+                        "constant " + i + " is not a CompiledFunction. got=" + actual.get(i).getClass());
+
+                CompiledFunctionObject fn = (CompiledFunctionObject) actual.get(i);
+                Object[] instructionsArray = (Object[]) constant;
+
+                // 將 Object[] 中的 byte[] 連接成完整的指令序列
+                List<byte[]> expectedInstructions = new ArrayList<>();
+                for (Object obj : instructionsArray) {
+                    if (obj instanceof byte[]) {
+                        expectedInstructions.add((byte[]) obj);
+                    }
+                }
+
+                // 使用現有的 testInstructions 方法
+                byte[][] insArray = expectedInstructions.toArray(new byte[0][]);
+                testInstructions(insArray, fn.getInstructions());
             }
         }
     }
@@ -347,18 +580,6 @@ public class CompilerTest {
                 "object has wrong value");
     }
 
-    private void testBooleanObject(boolean expected, MonkeyObject actual) {
-        assertTrue(actual instanceof BooleanObject,
-                "object is not Boolean. got=" + actual.getClass());
-
-        BooleanObject result = (BooleanObject) actual;
-        assertEquals(expected, result.getValue(),
-                "object has wrong value");
-    }
-
-    /**
-     * Chapter 6: 測試字串常量
-     */
     private void testStringObject(String expected, MonkeyObject actual) {
         assertTrue(actual instanceof StringObject,
                 "object is not String. got=" + actual.getClass());

@@ -1,8 +1,5 @@
 package com.monkey.object;
 
-/**
- * ObjectType 定義所有物件類型
- */
 public enum ObjectType {
     INTEGER("INTEGER"),
     BOOLEAN("BOOLEAN"),
@@ -14,7 +11,7 @@ public enum ObjectType {
     BUILTIN("BUILTIN"),
     ARRAY("ARRAY"),
     HASH("HASH"),
-    COMPILED_FUNCTION("COMPILED_FUNCTION");
+    COMPILED_FUNCTION("COMPILED_FUNCTION");  // ⭐ 第七章新增
 
     private final String value;
 

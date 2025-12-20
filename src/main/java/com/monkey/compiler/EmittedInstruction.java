@@ -1,17 +1,14 @@
 package com.monkey.compiler;
-import com.monkey.code.Opcode;
 
 import com.monkey.code.Opcode;
 
 /**
- * EmittedInstruction 記錄發射的指令信息
- * Chapter 4: Conditionals
- *
- * 用於追蹤最後發射的指令,以便進行回填等操作
+ * EmittedInstruction 表示已發射的指令
+ * Chapter 7: Functions (擴展)
  */
 public class EmittedInstruction {
-    private final Opcode opcode;    // 操作碼
-    private final int position;      // 指令在字節碼中的位置
+    private Opcode opcode;
+    private final int position;
 
     public EmittedInstruction(Opcode opcode, int position) {
         this.opcode = opcode;
@@ -20,6 +17,13 @@ public class EmittedInstruction {
 
     public Opcode getOpcode() {
         return opcode;
+    }
+
+    /**
+     * Chapter 7: 設置操作碼 (用於替換 OpPop 為 OpReturnValue)
+     */
+    public void setOpcode(Opcode opcode) {
+        this.opcode = opcode;
     }
 
     public int getPosition() {

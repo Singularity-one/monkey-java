@@ -4,32 +4,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * SymbolTable 管理變量名稱和它們的符號信息
- * Chapter 5: Keeping Track of Names
+ * SymbolTable 符號表
+ * Chapter 7: Functions (擴展)
  *
- * 符號表的職責:
- * 1. 記錄變量名稱和它們的索引
- * 2. 區分不同作用域的變量
- * 3. 支持變量查找和定義
+ * 新增功能:
+ * - 局部作用域支持
+ * - 嵌套作用域
  */
 public class SymbolTable {
-    private final SymbolTable outer;                 // 外層符號表 (用於嵌套作用域)
-    private final Map<String, Symbol> store;         // 符號存儲
-    private int numDefinitions;                      // 已定義的符號數量
+    private final SymbolTable outer;
+    private final Map<String, Symbol> store;
+    private int numDefinitions;
 
-    /**
-     * 創建新的符號表
-     */
     public SymbolTable() {
-        this.outer = null;
-        this.store = new HashMap<>();
-        this.numDefinitions = 0;
+        this(null);
     }
 
-    /**
-     * 創建嵌套的符號表
-     * Chapter 7 會用到
-     */
     public SymbolTable(SymbolTable outer) {
         this.outer = outer;
         this.store = new HashMap<>();
@@ -37,54 +27,49 @@ public class SymbolTable {
     }
 
     /**
-     * 定義一個新符號
-     *
-     * @param name 變量名稱
-     * @return 新創建的符號
+     * Chapter 7: 創建封閉的符號表 (用於函數作用域)
+     */
+    public static SymbolTable newEnclosed(SymbolTable outer) {
+        return new SymbolTable(outer);
+    }
+
+    /**
+     * 定義符號
      */
     public Symbol define(String name) {
-        // Chapter 5: 所有變量都是全局的
-        Symbol symbol = new Symbol(name, SymbolScope.GLOBAL, numDefinitions);
+        Symbol symbol;
+        if (outer == null) {
+            // 全局作用域
+            symbol = new Symbol(name, SymbolScope.GLOBAL, numDefinitions);
+        } else {
+            // 局部作用域 (Chapter 7)
+            symbol = new Symbol(name, SymbolScope.LOCAL, numDefinitions);
+        }
+
         store.put(name, symbol);
         numDefinitions++;
         return symbol;
     }
 
     /**
-     * 解析符號 (查找變量)
-     *
-     * @param name 變量名稱
-     * @return 找到的符號,如果不存在返回 null
+     * 解析符號
      */
     public Symbol resolve(String name) {
         Symbol symbol = store.get(name);
 
-        // 如果當前作用域找不到,嘗試在外層作用域查找
         if (symbol == null && outer != null) {
-            return outer.resolve(name);
+            // 在外層作用域中查找 (Chapter 7)
+            symbol = outer.resolve(name);
         }
 
         return symbol;
     }
 
-    /**
-     * 獲取已定義的符號數量
-     */
     public int getNumDefinitions() {
         return numDefinitions;
     }
 
-    /**
-     * 獲取外層符號表
-     */
     public SymbolTable getOuter() {
         return outer;
-    }
-
-    /**
-     * 獲取符號存儲 (用於測試)
-     */
-    public Map<String, Symbol> getStore() {
-        return store;
     }
 }
