@@ -11,11 +11,11 @@ import java.util.List;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 7: Functions (擴展)
+ * Chapter 8: Built-in Functions (擴展)
  */
 public class Compiler {
     private final List<MonkeyObject> constants;
-    private SymbolTable symbolTable;  // ⚠️ 改為非 final，因為需要切換
+    private SymbolTable symbolTable;
 
     private final List<CompilationScope> scopes;
     private int scopeIndex;
@@ -25,6 +25,11 @@ public class Compiler {
         this.symbolTable = new SymbolTable();
         this.scopes = new ArrayList<>();
         this.scopeIndex = 0;
+
+        // Chapter 8: 定義所有內建函數
+        for (int i = 0; i < Builtins.BUILTINS.length; i++) {
+            symbolTable.defineBuiltin(i, Builtins.BUILTINS[i].name);
+        }
 
         CompilationScope mainScope = new CompilationScope();
         scopes.add(mainScope);
@@ -40,27 +45,19 @@ public class Compiler {
         scopes.add(mainScope);
     }
 
-    /**
-     * Chapter 7: 進入新作用域
-     */
     private void enterScope() {
         CompilationScope scope = new CompilationScope();
         scopes.add(scope);
         scopeIndex++;
 
-        // ⭐ 關鍵：創建新的符號表並封閉當前符號表
         symbolTable = SymbolTable.newEnclosed(symbolTable);
     }
 
-    /**
-     * Chapter 7: 離開當前作用域並返回指令
-     */
     private Instructions leaveScope() {
         Instructions instructions = currentInstructions();
         scopes.remove(scopes.size() - 1);
         scopeIndex--;
 
-        // ⭐ 關鍵：恢復外層符號表
         symbolTable = symbolTable.getOuter();
 
         return instructions;
@@ -189,22 +186,15 @@ public class Compiler {
         }
     }
 
-    /**
-     * Chapter 7: 編譯函數字面量
-     */
     private void compileFunctionLiteral(FunctionLiteral fn) throws CompilerException {
-        // 1. 進入新作用域（這會創建新的封閉符號表）
         enterScope();
 
-        // 2. 定義參數為局部變量
         for (Identifier param : fn.getParameters()) {
             symbolTable.define(param.getValue());
         }
 
-        // 3. 編譯函數體
         compile(fn.getBody());
 
-        // 4. 處理隱式返回
         if (lastInstructionIs(Opcode.OP_POP)) {
             replaceLastPopWithReturn();
         }
@@ -212,35 +202,24 @@ public class Compiler {
             emit(Opcode.OP_RETURN);
         }
 
-        // 5. 離開作用域前記錄局部變量數量
         int numLocals = symbolTable.getNumDefinitions();
-
-        // 6. 離開作用域，獲取指令（這會恢復外層符號表）
         Instructions instructions = leaveScope();
 
-        // 7. 創建 CompiledFunction
         CompiledFunctionObject compiledFn = new CompiledFunctionObject(
                 instructions,
                 numLocals,
                 fn.getParameters().size()
         );
 
-        // 8. 發射 OpConstant（在外層作用域中）
         emit(Opcode.OP_CONSTANT, addConstant(compiledFn));
     }
 
-    /**
-     * Chapter 7: 將最後的 OpPop 替換為 OpReturnValue
-     */
     private void replaceLastPopWithReturn() {
         int lastPos = scopes.get(scopeIndex).getLastInstruction().getPosition();
         replaceInstruction(lastPos, Instructions.make(Opcode.OP_RETURN_VALUE));
         scopes.get(scopeIndex).getLastInstruction().setOpcode(Opcode.OP_RETURN_VALUE);
     }
 
-    /**
-     * Chapter 7: 替換指定位置的指令
-     */
     private void replaceInstruction(int pos, byte[] newInstruction) {
         Instructions ins = currentInstructions();
         for (int i = 0; i < newInstruction.length; i++) {
@@ -248,9 +227,6 @@ public class Compiler {
         }
     }
 
-    /**
-     * Chapter 7: 編譯函數調用
-     */
     private void compileCallExpression(CallExpression call) throws CompilerException {
         compile(call.getFunction());
 
@@ -261,17 +237,11 @@ public class Compiler {
         emit(Opcode.OP_CALL, call.getArguments().size());
     }
 
-    /**
-     * Chapter 7: 編譯返回語句
-     */
     private void compileReturnStatement(ReturnStatement returnStmt) throws CompilerException {
         compile(returnStmt.getReturnValue());
         emit(Opcode.OP_RETURN_VALUE);
     }
 
-    /**
-     * Chapter 7: 編譯 let 語句 (支持局部變量)
-     */
     private void compileLetStatement(LetStatement letStmt) throws CompilerException {
         compile(letStmt.getValue());
 
@@ -285,7 +255,7 @@ public class Compiler {
     }
 
     /**
-     * Chapter 7: 編譯標識符 (支持局部變量)
+     * Chapter 8: 編譯標識符 (支持內建函數)
      */
     private void compileIdentifier(Identifier ident) throws CompilerException {
         Symbol symbol = symbolTable.resolve(ident.getValue());
@@ -293,10 +263,23 @@ public class Compiler {
             throw new CompilerException("undefined variable " + ident.getValue());
         }
 
-        if (symbol.getScope() == SymbolScope.GLOBAL) {
-            emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
-        } else {
-            emit(Opcode.OP_GET_LOCAL, symbol.getIndex());
+        loadSymbol(symbol);
+    }
+
+    /**
+     * Chapter 8: 根據符號作用域載入符號
+     */
+    private void loadSymbol(Symbol symbol) {
+        switch (symbol.getScope()) {
+            case GLOBAL:
+                emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
+                break;
+            case LOCAL:
+                emit(Opcode.OP_GET_LOCAL, symbol.getIndex());
+                break;
+            case BUILTIN:
+                emit(Opcode.OP_GET_BUILTIN, symbol.getIndex());
+                break;
         }
     }
 

@@ -7,7 +7,7 @@ package com.monkey.compiler;
 public enum SymbolScope {
     GLOBAL("GLOBAL"),
     LOCAL("LOCAL"),      // ⭐ 第七章新增
-    BUILTIN("BUILTIN"),
+    BUILTIN("BUILTIN"),  // ⭐ 第八章新增
     FREE("FREE"),
     FUNCTION("FUNCTION");
 

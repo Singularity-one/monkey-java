@@ -28,7 +28,10 @@ public enum Opcode {
     OP_RETURN_VALUE((byte) 22),   // 返回值
     OP_RETURN((byte) 23),         // 返回 (無值)
     OP_GET_LOCAL((byte) 24),      // 獲取局部變量 (操作數: 局部索引)
-    OP_SET_LOCAL((byte) 25);      // 設置局部變量 (操作數: 局部索引)
+    OP_SET_LOCAL((byte) 25),     // 設置局部變量 (操作數: 局部索引)
+
+    // Chapter 8 - 內建函數
+    OP_GET_BUILTIN((byte) 26);  // 獲取內建函數 (操作數: 內建函數索引)
 
     private final byte value;
 

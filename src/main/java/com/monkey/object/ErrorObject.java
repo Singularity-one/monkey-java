@@ -10,10 +10,6 @@ public class ErrorObject implements MonkeyObject {
         this.message = message;
     }
 
-    public String getMessage() {
-        return message;
-    }
-
     @Override
     public ObjectType type() {
         return ObjectType.ERROR;
@@ -27,5 +23,22 @@ public class ErrorObject implements MonkeyObject {
     @Override
     public HashKey hashKey() {
         return null;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (!(obj instanceof ErrorObject)) return false;
+        ErrorObject other = (ErrorObject) obj;
+        return message.equals(other.message);
+    }
+
+    @Override
+    public int hashCode() {
+        return message.hashCode();
     }
 }

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 虛擬機測試
- * Chapter 7: Functions (擴展)
+ * Chapter 8: Built-in Functions (擴展)
  */
 public class VMTest {
 
@@ -107,9 +107,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試函數調用 (無參數)
-     */
     @Test
     public void testCallingFunctionsWithoutArguments() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -129,9 +126,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試返回語句
-     */
     @Test
     public void testFunctionsWithReturnStatement() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -147,9 +141,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試無返回值函數
-     */
     @Test
     public void testFunctionsWithoutReturnValue() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -165,9 +156,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試一級函數
-     */
     @Test
     public void testFirstClassFunctions() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -179,9 +167,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試局部綁定
-     */
     @Test
     public void testCallingFunctionsWithBindings() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -209,9 +194,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試帶參數的函數調用
-     */
     @Test
     public void testCallingFunctionsWithArgumentsAndBindings() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -243,9 +225,6 @@ public class VMTest {
         runVMTests(tests);
     }
 
-    /**
-     * Chapter 7: 測試錯誤的參數數量
-     */
     @Test
     public void testCallingFunctionsWithWrongArguments() {
         VMTestCase[] tests = new VMTestCase[]{
@@ -265,10 +244,62 @@ public class VMTest {
         runVMErrorTests(tests);
     }
 
+    /**
+     * Chapter 8: 測試內建函數執行
+     */
+    @Test
+    public void testBuiltinFunctions() {
+        VMTestCase[] tests = new VMTestCase[]{
+                // len 函數
+                new VMTestCase("len(\"\");", 0),
+                new VMTestCase("len(\"four\");", 4),
+                new VMTestCase("len(\"hello world\");", 11),
+                new VMTestCase(
+                        "len(1);",
+                        new ErrorObject("argument to `len` not supported, got INTEGER")
+                ),
+                new VMTestCase(
+                        "len(\"one\", \"two\");",
+                        new ErrorObject("wrong number of arguments. got=2, want=1")
+                ),
+                new VMTestCase("len([1, 2, 3]);", 3),
+                new VMTestCase("len([]);", 0),
+
+                // puts 函數
+                new VMTestCase("puts(\"hello\", \"world!\");", new NullObject()),
+
+                // first 函數
+                new VMTestCase("first([1, 2, 3]);", 1),
+                new VMTestCase("first([]);", new NullObject()),
+                new VMTestCase(
+                        "first(1);",
+                        new ErrorObject("argument to `first` must be ARRAY, got INTEGER")
+                ),
+
+                // last 函數
+                new VMTestCase("last([1, 2, 3]);", 3),
+                new VMTestCase("last([]);", new NullObject()),
+                new VMTestCase(
+                        "last(1);",
+                        new ErrorObject("argument to `last` must be ARRAY, got INTEGER")
+                ),
+
+                // rest 函數
+                new VMTestCase("rest([1, 2, 3]);", new int[]{2, 3}),
+                new VMTestCase("rest([]);", new NullObject()),
+
+                // push 函數
+                new VMTestCase("push([], 1);", new int[]{1}),
+                new VMTestCase(
+                        "push(1, 1);",
+                        new ErrorObject("argument to `push` must be ARRAY, got INTEGER")
+                )
+        };
+        runVMTests(tests);
+    }
+
     private void runVMTests(VMTestCase[] tests) {
         for (VMTestCase tt : tests) {
-            System.out.println("Testing: " + tt.input);  // 添加這行
-
             Program program = parse(tt.input);
 
             Compiler comp = new Compiler();
@@ -278,10 +309,6 @@ public class VMTest {
                 fail("compiler error: " + e.getMessage());
             }
 
-            // 打印編譯結果
-            System.out.println("Instructions:\n" + comp.bytecode().getInstructions());
-            System.out.println("Constants: " + comp.bytecode().getConstants().size());
-
             VM vm = new VM(comp.bytecode());
             try {
                 vm.run();
@@ -290,8 +317,6 @@ public class VMTest {
             }
 
             MonkeyObject stackElem = vm.lastPoppedStackElem();
-            System.out.println("Stack elem: " + stackElem);  // 添加這行
-
             testExpectedObject(tt.expected, stackElem);
         }
     }
@@ -337,6 +362,8 @@ public class VMTest {
             testHashObject((Map<HashKey, Integer>) expected, actual);
         } else if (expected instanceof NullObject) {
             testNullObject(actual);
+        } else if (expected instanceof ErrorObject) {
+            testErrorObject((ErrorObject) expected, actual);
         }
     }
 
@@ -404,6 +431,19 @@ public class VMTest {
     private void testNullObject(MonkeyObject actual) {
         assertTrue(actual instanceof NullObject,
                 "object is not Null. got=" + actual.getClass());
+    }
+
+    /**
+     * Chapter 8: 測試錯誤對象
+     */
+    private void testErrorObject(ErrorObject expected, MonkeyObject actual) {
+        assertTrue(actual instanceof ErrorObject,
+                "object is not Error. got=" + actual.getClass());
+
+        ErrorObject errorObj = (ErrorObject) actual;
+        assertEquals(expected.getMessage(), errorObj.getMessage(),
+                String.format("wrong error message. got=%s, want=%s",
+                        errorObj.getMessage(), expected.getMessage()));
     }
 
     private static class VMTestCase {

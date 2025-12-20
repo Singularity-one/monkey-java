@@ -4247,6 +4247,961 @@ f()();
 
 ---
 
+# Writing A Compiler In Go - 第八章：Built-in Functions
+
+本目錄包含《Writing A Compiler In Go》第八章的完整 Java 實現。
+
+## 章節概述
+
+第八章實現了內建函數系統，為 Monkey 語言添加了一組預定義的實用函數。這些函數直接內建在編譯器和虛擬機中，無需用戶定義即可使用。
+
+**章節目標**：能夠編譯並執行以下 Monkey 代碼：
+```monkey
+len([1, 2, 3]);          // => 3
+first([1, 2, 3]);        // => 1
+last([1, 2, 3]);         // => 3
+rest([1, 2, 3]);         // => [2, 3]
+push([1, 2, 3], 4);      // => [1, 2, 3, 4]
+puts("Hello World!");     // 打印 "Hello World!"
+```
+
+## 目錄結構
+```
+project/
+├── com/monkey/
+│   ├── code/
+│   │   ├── Opcode.java          # 操作碼枚舉 (新增 OP_GET_BUILTIN)
+│   │   └── Instructions.java    # 指令序列處理
+│   ├── object/
+│   │   ├── ObjectType.java      # 對象類型枚舉
+│   │   ├── MonkeyObject.java    # 對象接口
+│   │   ├── BuiltinObject.java   # ⭐ 內建函數對象 (第八章)
+│   │   ├── Builtins.java        # ⭐ 內建函數定義 (第八章)
+│   │   ├── ErrorObject.java     # ⭐ 錯誤對象 (第八章)
+│   │   └── ...
+│   ├── compiler/
+│   │   ├── Compiler.java        # 編譯器 (擴展內建函數支持)
+│   │   ├── CompilerTest.java    # 編譯器測試 (新增內建函數測試)
+│   │   ├── SymbolTable.java     # 符號表 (新增 BUILTIN 作用域)
+│   │   ├── SymbolScope.java     # 符號作用域 (新增 BUILTIN)
+│   │   └── ...
+│   └── vm/
+│       ├── VM.java              # 虛擬機 (擴展內建函數執行)
+│       └── VMTest.java          # 虛擬機測試 (新增內建函數測試)
+```
+
+## 第八章新增內容
+
+### 1. 新增操作碼
+```java
+// code/Opcode.java
+public enum Opcode {
+    // ... 現有操作碼 ...
+    
+    // Chapter 8 - 內建函數
+    OP_GET_BUILTIN((byte) 26);  // 獲取內建函數 (操作數: 內建函數索引)
+}
+```
+
+**操作碼定義**：
+```java
+// code/Instructions.java
+static {
+    DEFINITIONS.put(Opcode.OP_GET_BUILTIN, new Definition("OpGetBuiltin", new int[]{1}));
+}
+```
+
+- **操作數寬度**：1 字節（支持最多 256 個內建函數）
+- **用途**：根據索引從 `Builtins.BUILTINS` 數組中載入內建函數
+
+---
+
+### 2. 內建函數對象 (BuiltinObject)
+```java
+public class BuiltinObject implements MonkeyObject {
+    
+    @FunctionalInterface
+    public interface BuiltinFunction {
+        MonkeyObject apply(MonkeyObject... args);
+    }
+    
+    private final BuiltinFunction fn;
+
+    @Override
+    public ObjectType type() {
+        return ObjectType.BUILTIN;
+    }
+
+    @Override
+    public String inspect() {
+        return "builtin function";
+    }
+}
+```
+
+**特性**：
+- ✅ 使用 Java 函數式接口 `BuiltinFunction`
+- ✅ 支持可變參數 `MonkeyObject... args`
+- ✅ 返回 `MonkeyObject` 或 `null`（VM 會轉換為 NULL）
+
+---
+
+### 3. 內建函數定義 (Builtins.java)
+
+所有內建函數都定義在 `Builtins.BUILTINS` 數組中：
+```java
+public static final BuiltinDefinition[] BUILTINS = new BuiltinDefinition[]{
+    // 索引 0: len
+    new BuiltinDefinition("len", new BuiltinObject(args -> { ... })),
+    
+    // 索引 1: puts
+    new BuiltinDefinition("puts", new BuiltinObject(args -> { ... })),
+    
+    // 索引 2: first
+    new BuiltinDefinition("first", new BuiltinObject(args -> { ... })),
+    
+    // 索引 3: last
+    new BuiltinDefinition("last", new BuiltinObject(args -> { ... })),
+    
+    // 索引 4: rest
+    new BuiltinDefinition("rest", new BuiltinObject(args -> { ... })),
+    
+    // 索引 5: push
+    new BuiltinDefinition("push", new BuiltinObject(args -> { ... }))
+};
+```
+
+**關鍵設計**：
+- 📋 **數組索引**：決定 `OpGetBuiltin` 指令的操作數
+- 📋 **穩定順序**：索引不能改變，保證編譯器和 VM 的一致性
+- 📋 **統一訪問**：編譯器和 VM 都使用相同的 `Builtins.BUILTINS` 數組
+
+---
+
+### 4. BUILTIN 作用域
+
+新增第三種符號作用域：
+```java
+// compiler/SymbolScope.java
+public enum SymbolScope {
+    GLOBAL("GLOBAL"),
+    LOCAL("LOCAL"),
+    BUILTIN("BUILTIN");  // ⭐ 第八章新增
+}
+```
+
+**作用域特性**：
+- 🌐 **GLOBAL**：全局變量（所有函數共享）
+- 🏠 **LOCAL**：局部變量（函數內部）
+- 🔧 **BUILTIN**：內建函數（預定義，不可修改）
+
+---
+
+### 5. 符號表擴展
+
+新增 `defineBuiltin` 方法：
+```java
+public class SymbolTable {
+    /**
+     * Chapter 8: 定義內建函數
+     */
+    public Symbol defineBuiltin(int index, String name) {
+        Symbol symbol = new Symbol(name, SymbolScope.BUILTIN, index);
+        store.put(name, symbol);
+        return symbol;
+    }
+}
+```
+
+**在編譯器初始化時定義所有內建函數**：
+```java
+public Compiler() {
+    // ...
+    
+    // Chapter 8: 定義所有內建函數
+    for (int i = 0; i < Builtins.BUILTINS.length; i++) {
+        symbolTable.defineBuiltin(i, Builtins.BUILTINS[i].name);
+    }
+    
+    // ...
+}
+```
+
+---
+
+## 內建函數詳解
+
+### 1. len - 獲取長度
+
+**功能**：返回字串或陣列的長度
+```monkey
+len("hello")      // => 5
+len([1, 2, 3])    // => 3
+len("")           // => 0
+len([])           // => 0
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    if (args.length != 1) {
+        return newError("wrong number of arguments. got=%d, want=1", args.length);
+    }
+
+    if (args[0] instanceof ArrayObject) {
+        return new IntegerObject(((ArrayObject) args[0]).getElements().size());
+    } else if (args[0] instanceof StringObject) {
+        return new IntegerObject(((StringObject) args[0]).getValue().length());
+    } else {
+        return newError("argument to `len` not supported, got %s", args[0].type());
+    }
+})
+```
+
+**錯誤處理**：
+- ❌ `len(1)` → "argument to `len` not supported, got INTEGER"
+- ❌ `len("a", "b")` → "wrong number of arguments. got=2, want=1"
+
+---
+
+### 2. puts - 打印輸出
+
+**功能**：打印任意數量的參數到標準輸出
+```monkey
+puts("Hello")              // 打印: Hello
+puts("Hello", "World!")    // 打印: Hello
+                           //      World!
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    for (MonkeyObject arg : args) {
+        System.out.println(arg.inspect());
+    }
+    return null;  // 返回 null，VM 會轉換為 NULL
+})
+```
+
+**特性**：
+- ✅ 接受任意數量的參數
+- ✅ 每個參數單獨一行
+- ✅ 返回 `null`（顯示為 Monkey 的 `null`）
+
+---
+
+### 3. first - 獲取第一個元素
+
+**功能**：返回陣列的第一個元素
+```monkey
+first([1, 2, 3])  // => 1
+first([])         // => null
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    if (args.length != 1) {
+        return newError("wrong number of arguments. got=%d, want=1", args.length);
+    }
+    if (!(args[0] instanceof ArrayObject)) {
+        return newError("argument to `first` must be ARRAY, got %s", args[0].type());
+    }
+
+    ArrayObject arr = (ArrayObject) args[0];
+    if (arr.getElements().size() > 0) {
+        return arr.getElements().get(0);
+    }
+    return null;
+})
+```
+
+**邊界處理**：
+- 🔄 空陣列返回 `null`
+- ❌ 非陣列參數返回錯誤
+
+---
+
+### 4. last - 獲取最後一個元素
+
+**功能**：返回陣列的最後一個元素
+```monkey
+last([1, 2, 3])  // => 3
+last([])         // => null
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    // ... 參數驗證 ...
+    
+    ArrayObject arr = (ArrayObject) args[0];
+    int length = arr.getElements().size();
+    if (length > 0) {
+        return arr.getElements().get(length - 1);
+    }
+    return null;
+})
+```
+
+---
+
+### 5. rest - 獲取除第一個外的所有元素
+
+**功能**：返回去掉第一個元素後的新陣列（不修改原陣列）
+```monkey
+rest([1, 2, 3])  // => [2, 3]
+rest([1])        // => []
+rest([])         // => null
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    // ... 參數驗證 ...
+    
+    ArrayObject arr = (ArrayObject) args[0];
+    int length = arr.getElements().size();
+    if (length > 0) {
+        List<MonkeyObject> newElements = new ArrayList<>(
+            arr.getElements().subList(1, length)
+        );
+        return new ArrayObject(newElements);
+    }
+    return null;
+})
+```
+
+**特性**：
+- ✅ 不修改原陣列（不可變性）
+- ✅ 創建新的陣列對象
+- ✅ 空陣列返回 `null`
+
+---
+
+### 6. push - 添加元素
+
+**功能**：將元素添加到陣列末尾（返回新陣列）
+```monkey
+push([1, 2, 3], 4)  // => [1, 2, 3, 4]
+push([], 1)         // => [1]
+```
+
+**實現**：
+```java
+new BuiltinObject(args -> {
+    if (args.length != 2) {
+        return newError("wrong number of arguments. got=%d, want=2", args.length);
+    }
+    if (!(args[0] instanceof ArrayObject)) {
+        return newError("argument to `push` must be ARRAY, got %s", args[0].type());
+    }
+
+    ArrayObject arr = (ArrayObject) args[0];
+    List<MonkeyObject> newElements = new ArrayList<>(arr.getElements());
+    newElements.add(args[1]);
+    return new ArrayObject(newElements);
+})
+```
+
+**特性**：
+- ✅ 不修改原陣列（不可變性）
+- ✅ 可以添加任意類型的元素
+- ✅ 創建新的陣列對象
+
+---
+
+## 編譯流程
+
+### 示例：編譯內建函數調用
+
+**輸入 Monkey 代碼**：
+```monkey
+len([1, 2, 3])
+```
+
+**編譯步驟**：
+
+1. **解析調用表達式**
+    - 函數：`Identifier("len")`
+    - 參數：`ArrayLiteral([1, 2, 3])`
+
+2. **解析標識符 "len"**
+```java
+   Symbol symbol = symbolTable.resolve("len");
+   // symbol = Symbol{name="len", scope=BUILTIN, index=0}
+```
+
+3. **載入內建函數**
+```java
+   loadSymbol(symbol);
+   // 根據 scope=BUILTIN，發射: OpGetBuiltin 0
+```
+
+4. **編譯參數**
+```
+   OpConstant 0    // 1
+   OpConstant 1    // 2
+   OpConstant 2    // 3
+   OpArray 3       // [1, 2, 3]
+```
+
+5. **發射調用指令**
+```
+   OpCall 1        // 調用，1 個參數
+```
+
+**完整編譯結果**：
+```
+0000 OpGetBuiltin 0    // 載入 len 函數
+0002 OpConstant 0      // 1
+0005 OpConstant 1      // 2
+0008 OpConstant 2      // 3
+0011 OpArray 3         // [1, 2, 3]
+0014 OpCall 1          // 調用 len([1, 2, 3])
+0016 OpPop
+
+常量池:
+  0: 1
+  1: 2
+  2: 3
+```
+
+---
+
+## VM 執行流程
+
+### 示例：執行內建函數
+
+**執行 `len([1, 2, 3])`**：
+```
+步驟 1: OpGetBuiltin 0
+  - 從 Builtins.BUILTINS[0] 獲取 len 函數
+  - push(BuiltinObject[len])
+  - stack = [BuiltinObject]
+
+步驟 2-4: 載入常量 1, 2, 3
+  - stack = [BuiltinObject, 1, 2, 3]
+
+步驟 5: OpArray 3
+  - 創建陣列 [1, 2, 3]
+  - stack = [BuiltinObject, ArrayObject[1,2,3]]
+
+步驟 6: OpCall 1
+  - callee = stack[sp-1-1] = BuiltinObject
+  - 檢測到是內建函數
+  - 調用 executeBuiltinFunction()
+  
+  executeBuiltinFunction:
+    1. 收集參數: args = [ArrayObject[1,2,3]]
+    2. 調用: builtin.getFn().apply(args)
+    3. len 函數執行:
+       - 檢查參數數量: 1 ✓
+       - 檢查類型: ArrayObject ✓
+       - 返回: IntegerObject(3)
+    4. 調整堆疊: sp = sp - 1 - 1 = 0
+    5. 推入結果: push(IntegerObject(3))
+  
+  - stack = [IntegerObject(3)]
+
+步驟 7: OpPop
+  - stack = []
+  - lastPoppedStackElem = IntegerObject(3)
+```
+
+**關鍵點**：
+- ✅ 內建函數不創建調用幀
+- ✅ 直接在當前堆疊上執行
+- ✅ 執行後清理堆疊（移除函數和參數）
+
+---
+
+## VM 中的內建函數處理
+
+### executeCall 方法擴展
+```java
+private void executeCall(int numArgs) throws VMException {
+    MonkeyObject callee = stack[sp - 1 - numArgs];
+    
+    // Chapter 8: 處理內建函數調用
+    if (callee instanceof BuiltinObject) {
+        executeBuiltinFunction((BuiltinObject) callee, numArgs);
+        return;
+    }
+    
+    // 處理普通函數...
+}
+```
+
+### executeBuiltinFunction 方法
+```java
+private void executeBuiltinFunction(BuiltinObject builtin, int numArgs) 
+        throws VMException {
+    // 1. 收集參數
+    MonkeyObject[] args = new MonkeyObject[numArgs];
+    for (int i = 0; i < numArgs; i++) {
+        args[i] = stack[sp - numArgs + i];
+    }
+    
+    // 2. 調用內建函數
+    MonkeyObject result = builtin.getFn().apply(args);
+    
+    // 3. 調整堆疊指針（移除函數和參數）
+    sp = sp - numArgs - 1;
+    
+    // 4. 推入結果（null 轉換為 NULL）
+    if (result != null) {
+        push(result);
+    } else {
+        push(NULL);
+    }
+}
+```
+
+**堆疊變化示例**：
+```
+調用前: [..., BuiltinObject, arg1, arg2, arg3]
+                                              ↑
+                                              sp
+
+收集參數: args = [arg1, arg2, arg3]
+
+調用函數: result = builtin.apply(args)
+
+調整 sp: sp = sp - 3 - 1 = sp - 4
+
+調用後: [..., result]
+                    ↑
+                    sp
+```
+
+---
+
+## 錯誤處理
+
+### ErrorObject
+```java
+public class ErrorObject implements MonkeyObject {
+    private final String message;
+
+    @Override
+    public ObjectType type() {
+        return ObjectType.ERROR;
+    }
+
+    @Override
+    public String inspect() {
+        return "ERROR: " + message;
+    }
+}
+```
+
+### 錯誤創建
+```java
+private static ErrorObject newError(String format, Object... args) {
+    return new ErrorObject(String.format(format, args));
+}
+```
+
+### 錯誤示例
+```monkey
+len(1)
+// => ERROR: argument to `len` not supported, got INTEGER
+
+len("a", "b")
+// => ERROR: wrong number of arguments. got=2, want=1
+
+first(1)
+// => ERROR: argument to `first` must be ARRAY, got INTEGER
+
+push([], 1, 2)
+// => ERROR: wrong number of arguments. got=3, want=2
+```
+
+---
+
+## 測試
+
+### 編譯器測試
+```bash
+# 運行所有編譯器測試
+./gradlew test --tests CompilerTest
+
+# 運行特定測試
+./gradlew test --tests CompilerTest.testBuiltins
+```
+
+**測試內容**：
+```java
+@Test
+public void testBuiltins() {
+    CompilerTestCase[] tests = new CompilerTestCase[]{
+            new CompilerTestCase(
+                    "len([]); push([], 1);",
+                    new Object[]{1},
+                    new byte[][]{
+                            Instructions.make(Opcode.OP_GET_BUILTIN, 0),  // len
+                            Instructions.make(Opcode.OP_ARRAY, 0),
+                            Instructions.make(Opcode.OP_CALL, 1),
+                            Instructions.make(Opcode.OP_POP),
+                            Instructions.make(Opcode.OP_GET_BUILTIN, 5),  // push
+                            Instructions.make(Opcode.OP_ARRAY, 0),
+                            Instructions.make(Opcode.OP_CONSTANT, 0),
+                            Instructions.make(Opcode.OP_CALL, 2),
+                            Instructions.make(Opcode.OP_POP)
+                    }
+            )
+    };
+    runCompilerTests(tests);
+}
+```
+
+### 符號表測試
+```bash
+./gradlew test --tests SymbolTableTest.testDefineResolveBuiltins
+```
+
+**測試內容**：
+- ✅ 在全局作用域定義內建函數
+- ✅ 在嵌套作用域解析內建函數
+- ✅ 內建函數在所有作用域都可訪問
+
+### 虛擬機測試
+```bash
+./gradlew test --tests VMTest.testBuiltinFunctions
+```
+
+**測試覆蓋**：
+- ✅ len 函數的各種用例
+- ✅ puts 函數輸出
+- ✅ first/last/rest/push 的邊界情況
+- ✅ 錯誤處理（參數數量、類型檢查）
+
+---
+
+## 完整示例
+
+### 示例 1：組合使用內建函數
+```monkey
+let map = fn(arr, f) {
+    let iter = fn(arr, accumulated) {
+        if (len(arr) == 0) {
+            accumulated
+        } else {
+            iter(rest(arr), push(accumulated, f(first(arr))));
+        }
+    };
+    iter(arr, []);
+};
+
+let a = [1, 2, 3, 4];
+let double = fn(x) { x * 2 };
+map(a, double);
+// => [2, 4, 6, 8]
+```
+
+**執行流程**：
+1. 定義 `map` 函數（高階函數）
+2. 定義 `iter` 遞歸函數（注意：需要第九章的閉包支持）
+3. 使用 `len`, `rest`, `push`, `first` 實現映射
+
+### 示例 2：實現 reduce
+```monkey
+let reduce = fn(arr, initial, f) {
+    let iter = fn(arr, result) {
+        if (len(arr) == 0) {
+            result
+        } else {
+            iter(rest(arr), f(result, first(arr)));
+        }
+    };
+    iter(arr, initial);
+};
+
+let sum = fn(arr) {
+    reduce(arr, 0, fn(initial, el) { initial + el });
+};
+
+sum([1, 2, 3, 4, 5]);
+// => 15
+```
+
+### 示例 3：字串處理
+```monkey
+let greeting = "Hello, World!";
+puts("Length:", len(greeting));
+// 打印: Length:
+//      13
+
+let words = ["Hello", "World"];
+let join = fn(arr, sep) {
+    let iter = fn(arr, result) {
+        if (len(arr) == 0) {
+            result
+        } else {
+            let newResult = if (len(result) == 0) {
+                first(arr)
+            } else {
+                result + sep + first(arr)
+            };
+            iter(rest(arr), newResult);
+        }
+    };
+    iter(arr, "");
+};
+
+join(words, ", ");
+// => "Hello, World"
+```
+
+---
+
+## 架構設計
+
+### 內建函數的三個組成部分
+```
+┌─────────────────────────────────────────┐
+│         Builtins.BUILTINS               │
+│  (object 包中的統一定義)                 │
+│                                         │
+│  [0] len    - 獲取長度                   │
+│  [1] puts   - 打印輸出                   │
+│  [2] first  - 第一個元素                 │
+│  [3] last   - 最後一個元素               │
+│  [4] rest   - 除第一個外的所有元素        │
+│  [5] push   - 添加元素                   │
+└─────────────────────────────────────────┘
+         ↑                    ↑
+         │                    │
+    編譯時使用            運行時使用
+         │                    │
+┌────────┴────────┐   ┌───────┴────────┐
+│   Compiler      │   │      VM        │
+│                 │   │                │
+│ 1. 初始化時定義  │   │ 1. OpGetBuiltin│
+│    所有內建函數  │   │    載入函數     │
+│                 │   │                │
+│ 2. 解析標識符   │   │ 2. OpCall      │
+│    → BUILTIN    │   │    執行函數     │
+│      作用域     │   │                │
+│                 │   │ 3. 推入結果     │
+│ 3. 發射        │   │    (或 NULL)   │
+│    OpGetBuiltin │   │                │
+└─────────────────┘   └────────────────┘
+```
+
+### 調用約定統一性
+
+內建函數和普通函數使用相同的調用約定：
+```
+普通函數調用:
+  OpGetGlobal 0     // 載入函數
+  OpConstant 1      // 參數 1
+  OpConstant 2      // 參數 2
+  OpCall 2          // 調用
+
+內建函數調用:
+  OpGetBuiltin 0    // 載入內建函數
+  OpConstant 1      // 參數 1
+  OpConstant 2      // 參數 2
+  OpCall 2          // 調用 (相同!)
+```
+
+**優勢**：
+- ✅ 統一的調用方式
+- ✅ 編譯器邏輯簡化
+- ✅ 易於擴展新的內建函數
+
+---
+
+## 與原書的差異
+
+### 語言特性
+- ✅ **Java 函數式接口**：使用 `@FunctionalInterface` 定義內建函數
+- ✅ **Lambda 表達式**：內建函數定義使用 lambda
+- ✅ **錯誤處理**：使用 `ErrorObject` 而非字串
+
+### 設計模式
+- ✅ **數組而非切片**：`BuiltinDefinition[]` vs Go 的 `[]struct`
+- ✅ **靜態定義**：使用 `static final` 確保常量
+- ✅ **函數式風格**：充分利用 Java 8+ 的函數式特性
+
+### 命名慣例
+- ✅ **駝峰命名**：`getBuiltinByName()` vs Go 的 `GetBuiltinByName`
+- ✅ **類命名**：`BuiltinObject` vs Go 的 `object.Builtin`
+- ✅ **包結構**：`com.monkey.object` vs Go 的 `monkey/object`
+
+---
+
+## 性能考量
+
+### 1. 內建函數查找
+
+- **編譯時**：O(1) - 直接使用數組索引
+- **運行時**：O(1) - 直接訪問 `Builtins.BUILTINS[index]`
+
+### 2. 不可變數據結構
+
+所有內建函數都遵循不可變性原則：
+```java
+// push 不修改原陣列
+List<MonkeyObject> newElements = new ArrayList<>(arr.getElements());
+newElements.add(args[1]);
+return new ArrayObject(newElements);
+
+// rest 創建新的子列表
+List<MonkeyObject> newElements = new ArrayList<>(
+    arr.getElements().subList(1, length)
+);
+```
+
+**優勢**：
+- ✅ 線程安全
+- ✅ 避免意外修改
+- ✅ 函數式編程風格
+
+### 3. 錯誤處理開銷
+
+- 使用對象而非異常（避免異常開銷）
+- 錯誤作為正常返回值處理
+- VM 不需要特殊的錯誤處理邏輯
+
+---
+
+## 常見問題
+
+### Q1: 為什麼內建函數不創建調用幀？
+
+A: 內建函數是用 Java 實現的，不需要執行 Monkey 字節碼。它們直接在當前堆疊上操作，執行效率更高。
+
+### Q2: 為什麼內建函數返回 null 而不是 NULL？
+
+A: `null` 是 Java 的值，VM 在接收到 `null` 時會自動轉換為 Monkey 的 `NULL` 對象。這樣內建函數的實現更簡潔。
+```java
+// 內建函數返回
+return null;
+
+// VM 處理
+if (result != null) {
+    push(result);
+} else {
+    push(NULL);  // 轉換為 Monkey 的 NULL
+}
+```
+
+### Q3: 如何添加新的內建函數？
+
+步驟：
+1. 在 `Builtins.BUILTINS` 數組末尾添加新函數定義
+2. 實現函數邏輯
+3. 無需修改編譯器或 VM 代碼（自動支持）
+```java
+// 添加新的內建函數
+new BuiltinDefinition("max", new BuiltinObject(args -> {
+    // 實現邏輯...
+}))
+```
+
+### Q4: 為什麼使用數組而不是 Map？
+
+A: 數組提供：
+- ✅ **穩定的索引**：索引不會改變
+- ✅ **O(1) 訪問**：直接通過索引訪問
+- ✅ **順序保證**：迭代順序穩定
+- ✅ **編譯時確定**：索引在編譯時確定
+
+### Q5: 內建函數可以調用其他內建函數嗎？
+
+A: 可以，但不推薦。最好在 Monkey 代碼中組合使用：
+```monkey
+// 好的做法：在 Monkey 中組合
+let second = fn(arr) { first(rest(arr)) };
+
+// 避免：在 Java 中組合內建函數
+// 這樣會增加複雜度
+```
+
+---
+
+## 擴展建議
+
+### 可以添加的內建函數
+
+1. **字串操作**：
+```monkey
+   split("a,b,c", ",")    // => ["a", "b", "c"]
+   join(["a", "b"], ",")  // => "a,b"
+```
+
+2. **數學函數**：
+```monkey
+   max([1, 5, 3])         // => 5
+   min([1, 5, 3])         // => 1
+   sum([1, 2, 3])         // => 6
+```
+
+3. **類型檢查**：
+```monkey
+   type(5)                // => "INTEGER"
+   isArray([1, 2])        // => true
+```
+
+4. **文件 I/O**（高級）：
+```monkey
+   read("file.txt")       // => "file contents"
+   write("file.txt", "data")
+```
+
+---
+
+## 章節總結
+
+第八章實現了內建函數系統：
+
+### 新增組件
+1. **BuiltinObject** - 內建函數對象
+2. **Builtins** - 統一的內建函數定義
+3. **ErrorObject** - 錯誤對象
+4. **BUILTIN 作用域** - 第三種符號作用域
+
+### 新增操作碼
+- `OP_GET_BUILTIN` - 載入內建函數
+
+### 實現的內建函數
+- ✅ `len` - 獲取長度
+- ✅ `puts` - 打印輸出
+- ✅ `first` - 獲取第一個元素
+- ✅ `last` - 獲取最後一個元素
+- ✅ `rest` - 獲取除第一個外的所有元素
+- ✅ `push` - 添加元素到陣列
+
+### 關鍵設計決策
+- ✅ 統一的調用約定（內建函數和普通函數相同）
+- ✅ 不可變數據結構（函數式風格）
+- ✅ 集中式定義（`Builtins.BUILTINS` 數組）
+- ✅ 作用域隔離（BUILTIN 作用域）
+
+---
+
+## 下一章預告
+
+第九章將實現**閉包 (Closures)**：
+- 自由變量捕獲
+- 遞歸函數支持
+- 高階函數完整實現
+- 函數可以訪問外層函數的局部變量
+
+有了閉包，我們就可以實現：
+```monkey
+let newAdder = fn(a) {
+    fn(b) { a + b };  // 閉包：捕獲外層的 a
+};
+let addTwo = newAdder(2);
+addTwo(3);  // => 5
+```
+
+---
+
 
 
 

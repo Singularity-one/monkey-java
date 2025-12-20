@@ -61,6 +61,9 @@ public class Instructions {
         DEFINITIONS.put(Opcode.OP_RETURN, new Definition("OpReturn", new int[]{}));
         DEFINITIONS.put(Opcode.OP_GET_LOCAL, new Definition("OpGetLocal", new int[]{1}));  // 1 byte: 局部索引
         DEFINITIONS.put(Opcode.OP_SET_LOCAL, new Definition("OpSetLocal", new int[]{1}));  // 1 byte: 局部索引
+
+        // Chapter 8 - 內建函數
+        DEFINITIONS.put(Opcode.OP_GET_BUILTIN, new Definition("OpGetBuiltin", new int[]{1}));
     }
 
     public Instructions() {

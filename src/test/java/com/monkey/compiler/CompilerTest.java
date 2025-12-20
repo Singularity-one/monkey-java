@@ -489,6 +489,46 @@ public class CompilerTest {
         runCompilerTests(tests);
     }
 
+    /**
+     * Chapter 8: 測試內建函數編譯
+     */
+    @Test
+    public void testBuiltins() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                new CompilerTestCase(
+                        "len([]); push([], 1);",
+                        new Object[]{1},
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_GET_BUILTIN, 0),
+                                Instructions.make(Opcode.OP_ARRAY, 0),
+                                Instructions.make(Opcode.OP_CALL, 1),
+                                Instructions.make(Opcode.OP_POP),
+                                Instructions.make(Opcode.OP_GET_BUILTIN, 5),
+                                Instructions.make(Opcode.OP_ARRAY, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CALL, 2),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn() { len([]) }",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_BUILTIN, 0),
+                                        Instructions.make(Opcode.OP_ARRAY, 0),
+                                        Instructions.make(Opcode.OP_CALL, 1),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
     private void runCompilerTests(CompilerTestCase[] tests) {
         for (CompilerTestCase tt : tests) {
             Program program = parse(tt.input);
@@ -600,4 +640,5 @@ public class CompilerTest {
             this.expectedInstructions = expectedInstructions;
         }
     }
+
 }

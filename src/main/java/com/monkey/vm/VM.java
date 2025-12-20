@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * VM 是棧式虛擬機
- * Chapter 7: Functions (擴展)
+ * Chapter 8: Built-in Functions (擴展)
  */
 public class VM {
     private static final int STACK_SIZE = 2048;
@@ -22,7 +22,7 @@ public class VM {
 
     private final List<MonkeyObject> constants;
     private final MonkeyObject[] stack;
-    private int sp;  // 堆疊指針：指向下一個可用位置
+    private int sp;
     private final MonkeyObject[] globals;
 
     private final Frame[] frames;
@@ -41,7 +41,6 @@ public class VM {
         this.frames = new Frame[MAX_FRAMES];
         this.framesIndex = 1;
 
-        // 創建主幀
         CompiledFunctionObject mainFn = new CompiledFunctionObject(bytecode.getInstructions());
         Frame mainFrame = new Frame(mainFn, 0);
         this.frames[0] = mainFrame;
@@ -76,9 +75,6 @@ public class VM {
         return globals;
     }
 
-    /**
-     * 運行虛擬機
-     */
     public void run() throws VMException {
         int ip;
         Instructions ins;
@@ -203,14 +199,12 @@ public class VM {
                     executeIndexExpression(left, index);
                     break;
 
-                // Chapter 7: 函數調用
                 case OP_CALL:
                     int numArgs = ins.get(ip + 1) & 0xFF;
                     currentFrame().ip += 1;
                     executeCall(numArgs);
                     break;
 
-                // Chapter 7: 返回值
                 case OP_RETURN_VALUE:
                     MonkeyObject returnValue = pop();
 
@@ -220,7 +214,6 @@ public class VM {
                     push(returnValue);
                     break;
 
-                // Chapter 7: 返回 (無值)
                 case OP_RETURN:
                     frame = popFrame();
                     sp = frame.basePointer - 1;
@@ -228,7 +221,6 @@ public class VM {
                     push(NULL);
                     break;
 
-                // Chapter 7: 獲取局部變量
                 case OP_GET_LOCAL:
                     int localIndex = ins.get(ip + 1) & 0xFF;
                     currentFrame().ip += 1;
@@ -237,13 +229,21 @@ public class VM {
                     push(stack[cf.basePointer + localIndex]);
                     break;
 
-                // Chapter 7: 設置局部變量
                 case OP_SET_LOCAL:
                     localIndex = ins.get(ip + 1) & 0xFF;
                     currentFrame().ip += 1;
 
                     cf = currentFrame();
                     stack[cf.basePointer + localIndex] = pop();
+                    break;
+
+                // Chapter 8: 獲取內建函數
+                case OP_GET_BUILTIN:
+                    int builtinIndex = ins.get(ip + 1) & 0xFF;
+                    currentFrame().ip += 1;
+
+                    BuiltinObject builtin = Builtins.BUILTINS[builtinIndex].builtin;
+                    push(builtin);
                     break;
 
                 case OP_POP:
@@ -254,18 +254,19 @@ public class VM {
     }
 
     /**
-     * Chapter 7: 執行函數調用
-     *
-     * 堆疊佈局（調用前）:
-     *   ... | fn | arg1 | arg2 | ... | argN | <- sp
-     *
-     * basePointer 指向第一個參數的位置
+     * Chapter 8: 執行函數調用 (支持內建函數)
      */
     private void executeCall(int numArgs) throws VMException {
         MonkeyObject callee = stack[sp - 1 - numArgs];
 
+        // Chapter 8: 處理內建函數調用
+        if (callee instanceof BuiltinObject) {
+            executeBuiltinFunction((BuiltinObject) callee, numArgs);
+            return;
+        }
+
         if (!(callee instanceof CompiledFunctionObject)) {
-            throw new VMException("calling non-function");
+            throw new VMException("calling non-function and non-built-in");
         }
 
         CompiledFunctionObject fn = (CompiledFunctionObject) callee;
@@ -277,15 +278,37 @@ public class VM {
             );
         }
 
-        // basePointer 指向堆疊上第一個參數的位置
-        // sp - numArgs 就是第一個參數的位置
         Frame frame = new Frame(fn, sp - numArgs);
         pushFrame(frame);
 
-        // 為局部變量分配空間
-        // 參數已經在堆疊上了，所以只需要為額外的局部變量分配空間
         sp = frame.basePointer + fn.getNumLocals();
     }
+
+    /**
+     * Chapter 8: 執行內建函數
+     */
+    private void executeBuiltinFunction(BuiltinObject builtin, int numArgs) throws VMException {
+        // 收集參數
+        MonkeyObject[] args = new MonkeyObject[numArgs];
+        for (int i = 0; i < numArgs; i++) {
+            args[i] = stack[sp - numArgs + i];
+        }
+
+        // 調用內建函數
+        MonkeyObject result = builtin.getFn().apply(args);
+
+        // 調整堆疊指針（移除函數和參數）
+        sp = sp - numArgs - 1;
+
+        // 推入結果（如果是 null，推入 NULL）
+        if (result != null) {
+            push(result);
+        } else {
+            push(NULL);
+        }
+    }
+
+    // ... 其他方法保持不變 ...
 
     private MonkeyObject buildArray(int startIndex, int endIndex) {
         java.util.List<MonkeyObject> elements = new java.util.ArrayList<>();
