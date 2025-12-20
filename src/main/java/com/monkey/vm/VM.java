@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * VM 是棧式虛擬機
- * Chapter 8: Built-in Functions (擴展)
+ * Chapter 9: Closures (擴展)
  */
 public class VM {
     private static final int STACK_SIZE = 2048;
@@ -41,8 +41,10 @@ public class VM {
         this.frames = new Frame[MAX_FRAMES];
         this.framesIndex = 1;
 
+        // Chapter 9: 包裝主函數為閉包
         CompiledFunctionObject mainFn = new CompiledFunctionObject(bytecode.getInstructions());
-        Frame mainFrame = new Frame(mainFn, 0);
+        ClosureObject mainClosure = new ClosureObject(mainFn);
+        Frame mainFrame = new Frame(mainClosure, 0);
         this.frames[0] = mainFrame;
     }
 
@@ -237,13 +239,33 @@ public class VM {
                     stack[cf.basePointer + localIndex] = pop();
                     break;
 
-                // Chapter 8: 獲取內建函數
                 case OP_GET_BUILTIN:
                     int builtinIndex = ins.get(ip + 1) & 0xFF;
                     currentFrame().ip += 1;
 
                     BuiltinObject builtin = Builtins.BUILTINS[builtinIndex].builtin;
                     push(builtin);
+                    break;
+
+                // Chapter 9: 創建閉包
+                case OP_CLOSURE:
+                    constIndex = Instructions.readUint16(new byte[]{
+                            ins.get(ip + 1),
+                            ins.get(ip + 2)
+                    });
+                    int numFree = ins.get(ip + 3) & 0xFF;
+                    currentFrame().ip += 3;
+
+                    pushClosure(constIndex, numFree);
+                    break;
+
+                // Chapter 9: 獲取自由變量
+                case OP_GET_FREE:
+                    int freeIndex = ins.get(ip + 1) & 0xFF;
+                    currentFrame().ip += 1;
+
+                    ClosureObject currentClosure = currentFrame().getClosure();
+                    push(currentClosure.getFree()[freeIndex]);
                     break;
 
                 case OP_POP:
@@ -254,53 +276,70 @@ public class VM {
     }
 
     /**
-     * Chapter 8: 執行函數調用 (支持內建函數)
+     * Chapter 9: 創建閉包並推入堆疊
+     */
+    private void pushClosure(int constIndex, int numFree) throws VMException {
+        MonkeyObject constant = constants.get(constIndex);
+        if (!(constant instanceof CompiledFunctionObject)) {
+            throw new VMException("not a function: " + constant);
+        }
+
+        CompiledFunctionObject function = (CompiledFunctionObject) constant;
+
+        // 從堆疊收集自由變量
+        MonkeyObject[] free = new MonkeyObject[numFree];
+        for (int i = 0; i < numFree; i++) {
+            free[i] = stack[sp - numFree + i];
+        }
+        sp = sp - numFree;
+
+        // 創建閉包
+        ClosureObject closure = new ClosureObject(function, free);
+        push(closure);
+    }
+
+    /**
+     * Chapter 9: 執行函數調用 (支持閉包)
      */
     private void executeCall(int numArgs) throws VMException {
         MonkeyObject callee = stack[sp - 1 - numArgs];
 
-        // Chapter 8: 處理內建函數調用
-        if (callee instanceof BuiltinObject) {
+        if (callee instanceof ClosureObject) {
+            callClosure((ClosureObject) callee, numArgs);
+        } else if (callee instanceof BuiltinObject) {
             executeBuiltinFunction((BuiltinObject) callee, numArgs);
-            return;
+        } else {
+            throw new VMException("calling non-closure and non-builtin");
         }
-
-        if (!(callee instanceof CompiledFunctionObject)) {
-            throw new VMException("calling non-function and non-built-in");
-        }
-
-        CompiledFunctionObject fn = (CompiledFunctionObject) callee;
-
-        if (numArgs != fn.getNumParameters()) {
-            throw new VMException(
-                    String.format("wrong number of arguments: want=%d, got=%d",
-                            fn.getNumParameters(), numArgs)
-            );
-        }
-
-        Frame frame = new Frame(fn, sp - numArgs);
-        pushFrame(frame);
-
-        sp = frame.basePointer + fn.getNumLocals();
     }
 
     /**
-     * Chapter 8: 執行內建函數
+     * Chapter 9: 調用閉包
      */
+    private void callClosure(ClosureObject cl, int numArgs) throws VMException {
+        if (numArgs != cl.getFn().getNumParameters()) {
+            throw new VMException(
+                    String.format("wrong number of arguments: want=%d, got=%d",
+                            cl.getFn().getNumParameters(), numArgs)
+            );
+        }
+
+        Frame frame = new Frame(cl, sp - numArgs);
+        pushFrame(frame);
+
+        sp = frame.basePointer + cl.getFn().getNumLocals();
+    }
+
     private void executeBuiltinFunction(BuiltinObject builtin, int numArgs) throws VMException {
-        // 收集參數
         MonkeyObject[] args = new MonkeyObject[numArgs];
         for (int i = 0; i < numArgs; i++) {
             args[i] = stack[sp - numArgs + i];
         }
 
-        // 調用內建函數
         MonkeyObject result = builtin.getFn().apply(args);
 
-        // 調整堆疊指針（移除函數和參數）
         sp = sp - numArgs - 1;
 
-        // 推入結果（如果是 null，推入 NULL）
         if (result != null) {
             push(result);
         } else {

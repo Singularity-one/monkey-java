@@ -455,4 +455,156 @@ public class VMTest {
             this.expected = expected;
         }
     }
+
+    /**
+     * Chapter 9: 測試閉包執行
+     */
+    @Test
+    public void testClosures() {
+        VMTestCase[] tests = new VMTestCase[]{
+                // 簡單閉包
+                new VMTestCase(
+                        """
+                        let newClosure = fn(a) {
+                            fn() { a; };
+                        };
+                        let closure = newClosure(99);
+                        closure();
+                        """,
+                        99
+                ),
+
+                // 閉包修改外層變量
+                new VMTestCase(
+                        """
+                        let newAdder = fn(a, b) {
+                            fn(c) { a + b + c };
+                        };
+                        let adder = newAdder(1, 2);
+                        adder(8);
+                        """,
+                        11
+                ),
+
+                // 嵌套閉包
+                new VMTestCase(
+                        """
+                        let newAdder = fn(a, b) {
+                            let c = a + b;
+                            fn(d) { c + d };
+                        };
+                        let adder = newAdder(1, 2);
+                        adder(8);
+                        """,
+                        11
+                ),
+
+                // 嵌套閉包（更複雜）
+                new VMTestCase(
+                        """
+                        let newAdderOuter = fn(a, b) {
+                            let c = a + b;
+                            fn(d) {
+                                let e = d + c;
+                                fn(f) { e + f; };
+                            };
+                        };
+                        let newAdderInner = newAdderOuter(1, 2);
+                        let adder = newAdderInner(3);
+                        adder(8);
+                        """,
+                        14
+                ),
+
+                // 全局變量與閉包
+                new VMTestCase(
+                        """
+                        let a = 1;
+                        let newAdderOuter = fn(b) {
+                            fn(c) {
+                                fn(d) { a + b + c + d };
+                            };
+                        };
+                        let newAdderInner = newAdderOuter(2);
+                        let adder = newAdderInner(3);
+                        adder(8);
+                        """,
+                        14
+                ),
+
+                // 多個獨立閉包
+                new VMTestCase(
+                        """
+                        let newClosure = fn(a, b) {
+                            let one = fn() { a; };
+                            let two = fn() { b; };
+                            fn() { one() + two(); };
+                        };
+                        let closure = newClosure(9, 90);
+                        closure();
+                        """,
+                        99
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 9: 測試遞歸閉包
+     */
+    @Test
+    public void testRecursiveFunctions() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        """
+                        let countDown = fn(x) {
+                            if (x == 0) {
+                                return 0;
+                            } else {
+                                countDown(x - 1);
+                            }
+                        };
+                        countDown(1);
+                        """,
+                        0
+                ),
+
+                new VMTestCase(
+                        """
+                        let fibonacci = fn(n) {
+                            if (n < 2) {
+                                n
+                            } else {
+                                fibonacci(n - 1) + fibonacci(n - 2)
+                            }
+                        };
+                        fibonacci(5);
+                        """,
+                        5
+                )
+        };
+        runVMTests(tests);
+    }
+
+    /**
+     * Chapter 9: 測試閉包與內建函數
+     */
+    @Test
+    public void testClosuresWithBuiltins() {
+        VMTestCase[] tests = new VMTestCase[]{
+                new VMTestCase(
+                        """
+                        let double = fn(x) { x * 2 };
+                        let arr = [1, 2, 3, 4];
+                        
+                        let first_doubled = double(first(arr));
+                        let last_doubled = double(last(arr));
+                        
+                        first_doubled + last_doubled;
+                        """,
+                        10  // 2 + 8
+                )
+        };
+        runVMTests(tests);
+    }
 }

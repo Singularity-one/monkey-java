@@ -5202,6 +5202,1603 @@ addTwo(3);  // => 5
 
 ---
 
+# Writing A Compiler In Go - 第九章：Closures (閉包)
+
+本目錄包含《Writing A Compiler In Go》第九章的完整 Java 實現。
+
+## 章節概述
+
+第九章實現了閉包系統，這是編譯器和虛擬機中最重要且複雜的特性之一。閉包允許函數"捕獲"並攜帶定義時所在作用域的變量，即使在函數定義的作用域已經結束後，這些變量仍然可以被訪問。
+
+**章節目標**：能夠編譯並執行以下 Monkey 代碼：
+```monkey
+let newAdder = fn(a) {
+    fn(b) { a + b };
+};
+let addTwo = newAdder(2);
+addTwo(3);  // => 5
+```
+
+## 核心概念
+
+### 什麼是閉包？
+
+閉包（Closure）是一個函數及其引用的外部變量的組合。當一個函數引用了外層函數的變量時，即使外層函數已經返回，內層函數仍然可以訪問這些變量。
+
+**示例**：
+```monkey
+let newAdder = fn(a) {
+    let adder = fn(b) { a + b; };
+    return adder;
+};
+
+let addTwo = newAdder(2);
+addTwo(3);  // => 5
+```
+
+在這個例子中：
+- `adder` 函數是一個閉包
+- 它"捕獲"了外層函數的參數 `a`
+- 即使 `newAdder` 已經返回，`adder` 仍然可以訪問 `a` 的值（2）
+
+### 關鍵術語
+
+#### 自由變量 (Free Variables)
+
+**定義**：從當前函數的角度看，既不是當前函數的參數，也不是當前函數內部定義的局部變量，而是來自外層作用域的變量。
+
+**示例**：
+```monkey
+fn(a) {          // a 是參數
+    let b = 1;   // b 是局部變量
+    fn(c) {      // c 是參數
+        a + b + c;  // a 和 b 是自由變量（對內層函數而言）
+    }
+}
+```
+
+從內層函數的角度：
+- `c` - 局部參數
+- `a`, `b` - 自由變量（來自外層作用域）
+
+#### 為什麼叫"自由"變量？
+
+因為這些變量不受當前作用域的約束（not bound to the current scope），它們"自由地"來自外層作用域。
+
+### 實現策略
+
+我們採用的策略是：**將每個函數都視為閉包**
+
+即使函數不引用任何自由變量，我們也將其包裝為閉包。這簡化了編譯器和 VM 的架構，減少了特殊情況的處理。
+
+**優點**：
+- ✅ 統一的調用約定
+- ✅ 簡化編譯器邏輯
+- ✅ 減少 VM 中的條件判斷
+
+**代價**：
+- 輕微的性能開銷（可通過後續優化消除）
+
+---
+
+## 目錄結構
+```
+project/
+├── com/monkey/
+│   ├── code/
+│   │   ├── Opcode.java          # 操作碼枚舉 (新增 OP_CLOSURE, OP_GET_FREE)
+│   │   └── Instructions.java    # 指令序列處理 (支持雙操作數)
+│   ├── object/
+│   │   ├── ObjectType.java      # 對象類型枚舉 (新增 CLOSURE)
+│   │   ├── ClosureObject.java   # ⭐ 閉包對象 (第九章核心)
+│   │   └── ...
+│   ├── compiler/
+│   │   ├── Compiler.java        # 編譯器 (擴展閉包支持)
+│   │   ├── CompilerTest.java    # 編譯器測試 (新增閉包測試)
+│   │   ├── SymbolTable.java     # 符號表 (新增 FREE 作用域和自由變量追蹤)
+│   │   ├── SymbolTableTest.java # 符號表測試 (測試自由變量解析)
+│   │   ├── SymbolScope.java     # 符號作用域 (新增 FREE)
+│   │   └── ...
+│   └── vm/
+│       ├── VM.java              # 虛擬機 (擴展閉包執行)
+│       ├── VMTest.java          # 虛擬機測試 (新增閉包測試)
+│       ├── Frame.java           # 調用幀 (改為存儲閉包而非函數)
+│       └── ...
+```
+
+---
+
+## 第九章新增內容
+
+### 1. 新增對象類型
+
+#### ClosureObject
+```java
+public class ClosureObject implements MonkeyObject {
+    private final CompiledFunctionObject fn;
+    private final MonkeyObject[] free;  // 自由變量數組
+
+    public ClosureObject(CompiledFunctionObject fn, MonkeyObject[] free) {
+        this.fn = fn;
+        this.free = free;
+    }
+    
+    @Override
+    public ObjectType type() {
+        return ObjectType.CLOSURE;
+    }
+}
+```
+
+**組成部分**：
+- `fn` - 被包裝的編譯後的函數
+- `free` - 自由變量數組（運行時創建）
+
+**關鍵特性**：
+- 包裝編譯後的函數 (`CompiledFunctionObject`)
+- 攜帶自由變量數組（按索引訪問）
+- 可以像普通函數一樣被調用
+- 自由變量在閉包創建時從堆疊複製
+
+---
+
+### 2. 新增操作碼
+
+#### OP_CLOSURE
+```java
+OP_CLOSURE((byte) 27)
+```
+
+**操作數**：
+- 第 1 個操作數（2 bytes）：函數在常量池中的索引
+- 第 2 個操作數（1 byte）：自由變量的數量
+
+**功能**：創建閉包
+1. 從常量池獲取編譯後的函數
+2. 從堆疊收集指定數量的自由變量
+3. 創建閉包對象
+4. 推入堆疊
+
+**示例**：
+```
+OpClosure 0 2
+```
+- 從常量池獲取索引 0 的函數
+- 從堆疊取 2 個自由變量
+- 創建閉包並推入堆疊
+
+**編譯結果示例**：
+```monkey
+fn(a) {
+    fn(b) { a + b }
+}
+```
+
+編譯為：
+```
+外層函數:
+  OpGetLocal 0      // 載入 a
+  OpClosure 0 1     // 創建內層閉包，1 個自由變量
+  OpReturnValue
+
+主程序:
+  OpClosure 1 0     // 創建外層閉包，0 個自由變量
+  OpPop
+```
+
+#### OP_GET_FREE
+```java
+OP_GET_FREE((byte) 28)
+```
+
+**操作數**：
+- 1 byte：自由變量在 free 數組中的索引
+
+**功能**：獲取自由變量
+1. 從當前閉包的 free 數組中獲取指定索引的變量
+2. 推入堆疊
+
+**示例**：
+```
+OpGetFree 0  // 獲取第 0 個自由變量
+OpGetFree 1  // 獲取第 1 個自由變量
+```
+
+**使用示例**：
+```monkey
+fn(a) {
+    fn(b) {
+        a + b  // a 是自由變量
+    }
+}
+```
+
+內層函數編譯為：
+```
+OpGetFree 0     // 獲取 a (自由變量)
+OpGetLocal 0    // 獲取 b (局部參數)
+OpAdd
+OpReturnValue
+```
+
+---
+
+### 3. 新增符號作用域
+```java
+public enum SymbolScope {
+    GLOBAL("GLOBAL"),   // 全局變量
+    LOCAL("LOCAL"),     // 局部變量
+    BUILTIN("BUILTIN"), // 內建函數
+    FREE("FREE");       // ⭐ 自由變量 (第九章新增)
+}
+```
+
+**FREE 作用域的作用**：
+- 標識來自外層作用域的變量
+- 觸發 `OpGetFree` 指令的發射
+- 區別於 `LOCAL` 和 `GLOBAL` 的訪問方式
+
+**作用域對應的指令**：
+| 作用域 | 訪問指令 | 來源 |
+|--------|----------|------|
+| GLOBAL | OpGetGlobal | 全局存儲 |
+| LOCAL | OpGetLocal | 當前堆疊幀 |
+| BUILTIN | OpGetBuiltin | 內建函數表 |
+| FREE | OpGetFree | 當前閉包的 free 數組 |
+
+---
+
+### 4. 符號表擴展
+
+#### 新增字段
+```java
+public class SymbolTable {
+    private final SymbolTable outer;
+    private final Map<String, Symbol> store;
+    private int numDefinitions;
+    
+    // ⭐ Chapter 9: 自由變量列表
+    private final List<Symbol> freeSymbols;
+}
+```
+
+**freeSymbols 的作用**：
+- 記錄所有被識別為自由變量的符號
+- 保存原始符號（來自外層作用域）
+- 用於在離開作用域後載入自由變量
+
+#### 新增方法：defineFree
+```java
+public Symbol defineFree(Symbol original) {
+    freeSymbols.add(original);
+    
+    Symbol symbol = new Symbol(
+        original.getName(), 
+        SymbolScope.FREE, 
+        freeSymbols.size() - 1  // 在 free 數組中的索引
+    );
+    store.put(original.getName(), symbol);
+    
+    return symbol;
+}
+```
+
+**功能**：
+1. 將原始符號添加到 `freeSymbols` 列表
+2. 創建新的 FREE 作用域符號（索引為在 free 數組中的位置）
+3. 存儲到當前符號表
+4. 返回新符號
+
+**為什麼保存原始符號？**
+
+因為自由變量的"身份"是相對的：
+- 在當前作用域：它是 FREE 變量
+- 在外層作用域：它可能是 LOCAL 變量或另一個 FREE 變量
+
+我們需要原始符號來知道如何在外層作用域載入它。
+
+#### 更新方法：resolve
+```java
+public Symbol resolve(String name) {
+    Symbol symbol = store.get(name);
+    
+    if (symbol == null && outer != null) {
+        symbol = outer.resolve(name);
+        
+        if (symbol == null) {
+            return null;
+        }
+        
+        // ⭐ 關鍵邏輯
+        // 全局變量和內建函數直接返回（無需作為自由變量）
+        if (symbol.getScope() == SymbolScope.GLOBAL || 
+            symbol.getScope() == SymbolScope.BUILTIN) {
+            return symbol;
+        }
+        
+        // 其他情況定義為自由變量
+        return defineFree(symbol);
+    }
+    
+    return symbol;
+}
+```
+
+**解析邏輯**：
+```
+查找符號 "a":
+  1. 在當前作用域查找
+     找到了？ → 返回
+     
+  2. 沒找到，有外層作用域？
+     遞歸查找外層
+     
+  3. 在外層找到了
+     是 GLOBAL 或 BUILTIN？ → 直接返回
+     是 LOCAL 或 FREE？ → 定義為當前作用域的 FREE 變量
+```
+
+**為什麼 GLOBAL 不需要作為自由變量？**
+
+因為全局變量在任何地方都可以直接訪問，不需要通過閉包攜帶。
+
+**示例**：
+```monkey
+let global = 10;
+
+fn(a) {          // a: LOCAL
+    fn(b) {      // b: LOCAL
+        global + a + b
+        // global: GLOBAL (直接訪問)
+        // a: FREE (來自外層)
+        // b: LOCAL (當前層)
+    }
+}
+```
+
+---
+
+## 編譯流程詳解
+
+### 完整示例：編譯嵌套閉包
+
+**輸入 Monkey 代碼**：
+```monkey
+fn(a) {
+    fn(b) {
+        a + b
+    }
+}
+```
+
+### 階段 1：編譯外層函數
+```
+進入作用域 (外層)
+  符號表: SymbolTable{outer=global}
+  
+  定義參數:
+    a → Symbol{name="a", scope=LOCAL, index=0}
+    
+  開始編譯函數體...
+```
+
+### 階段 2：編譯內層函數
+```
+進入作用域 (內層)
+  符號表: SymbolTable{outer=外層}
+  
+  定義參數:
+    b → Symbol{name="b", scope=LOCAL, index=0}
+    
+  編譯 a + b:
+    
+    解析 'a':
+      1. 在當前作用域查找 → 未找到
+      2. 在外層作用域查找 → 找到 Symbol{name="a", scope=LOCAL, index=0}
+      3. 不是 GLOBAL 或 BUILTIN
+      4. 調用 defineFree(Symbol{a, LOCAL, 0})
+      5. 返回 Symbol{name="a", scope=FREE, index=0}
+      6. 發射: OpGetFree 0
+    
+    解析 'b':
+      1. 在當前作用域查找 → 找到 Symbol{name="b", scope=LOCAL, index=0}
+      2. 發射: OpGetLocal 0
+    
+    發射: OpAdd
+  
+  發射: OpReturnValue
+  
+  獲取自由變量:
+    freeSymbols = [Symbol{name="a", scope=LOCAL, index=0}]
+  
+  離開作用域
+  返回指令序列
+```
+
+**內層函數的編譯結果**：
+```
+常量池索引 0:
+  OpGetFree 0      // a (自由變量)
+  OpGetLocal 0     // b (局部參數)
+  OpAdd
+  OpReturnValue
+```
+
+### 階段 3：在外層函數中處理內層函數
+```
+回到外層作用域
+  符號表: SymbolTable{outer=global}
+  
+  獲取到內層函數的自由變量:
+    freeSymbols = [Symbol{name="a", scope=LOCAL, index=0}]
+  
+  載入自由變量到堆疊:
+    for each symbol in freeSymbols:
+      Symbol{name="a", scope=LOCAL, index=0}
+      在當前作用域，a 是 LOCAL
+      發射: OpGetLocal 0
+  
+  創建編譯後的函數:
+    CompiledFunctionObject{instructions=..., numLocals=1, numParams=1}
+  
+  添加到常量池:
+    常量池索引 0
+  
+  發射閉包創建指令:
+    OpClosure 0 1  // 函數索引=0, 自由變量數量=1
+  
+  發射: OpReturnValue
+  
+  離開作用域
+```
+
+**外層函數的編譯結果**：
+```
+常量池索引 1:
+  OpGetLocal 0     // a (載入以供內層函數使用)
+  OpClosure 0 1    // 創建內層閉包，1 個自由變量
+  OpReturnValue
+```
+
+### 階段 4：主程序
+```
+全局作用域
+  
+  創建外層閉包:
+    OpClosure 1 0  // 函數索引=1, 自由變量數量=0
+  
+  OpPop
+```
+
+### 完整編譯結果
+```
+常量池:
+  [0]: CompiledFunction {
+         // 內層函數
+         OpGetFree 0      // a
+         OpGetLocal 0     // b
+         OpAdd
+         OpReturnValue
+       }
+  
+  [1]: CompiledFunction {
+         // 外層函數
+         OpGetLocal 0     // a (載入以傳遞給內層)
+         OpClosure 0 1    // 創建閉包
+         OpReturnValue
+       }
+
+主程序指令:
+  0000 OpClosure 1 0     // 創建外層閉包
+  0004 OpPop
+```
+
+---
+
+## VM 執行流程詳解
+
+### 完整示例：執行閉包
+
+**執行代碼**：
+```monkey
+let newAdder = fn(a) {
+    fn(b) { a + b };
+};
+let addTwo = newAdder(2);
+addTwo(3);
+```
+
+### 階段 1：創建 newAdder 閉包
+```
+指令: OpClosure 1 0
+
+執行:
+  1. constIndex = 1
+  2. numFree = 0
+  3. function = constants[1]  // CompiledFunctionObject
+  4. free = []  // 空數組，沒有自由變量
+  5. closure = ClosureObject{fn=function, free=[]}
+  6. push(closure)
+
+堆疊: [ClosureObject{newAdder}]
+```
+```
+指令: OpSetGlobal 0
+
+執行:
+  globals[0] = pop()  // ClosureObject{newAdder}
+
+堆疊: []
+全局: globals[0] = ClosureObject{newAdder}
+```
+
+### 階段 2：調用 newAdder(2)
+```
+指令: OpGetGlobal 0
+堆疊: [ClosureObject{newAdder}]
+
+指令: OpConstant 0  // 2
+堆疊: [ClosureObject{newAdder}, 2]
+```
+```
+指令: OpCall 1
+
+執行:
+  callee = stack[sp - 1 - 1] = ClosureObject{newAdder}
+  numArgs = 1
+  
+  調用 callClosure:
+    1. 檢查參數數量: 1 == 1 ✓
+    2. basePointer = sp - numArgs = 2 - 1 = 1
+    3. 創建調用幀: Frame{closure=newAdder, basePointer=1}
+    4. pushFrame(frame)
+    5. sp = basePointer + numLocals = 1 + 1 = 2
+    
+  堆疊佈局:
+    [ClosureObject{newAdder}, 2, ...]
+                              ↑
+                         basePointer
+
+  執行 newAdder 函數體:
+```
+
+#### newAdder 函數內部執行
+```
+指令: OpGetLocal 0
+
+執行:
+  localIndex = 0
+  frame = currentFrame()  // Frame{basePointer=1}
+  value = stack[1 + 0] = stack[1] = 2
+  push(2)
+
+堆疊: [ClosureObject{newAdder}, 2, 2]
+```
+```
+指令: OpClosure 0 1
+
+執行:
+  constIndex = 0
+  numFree = 1
+  function = constants[0]  // 內層函數
+  
+  收集自由變量:
+    free = [stack[sp - 1]]
+         = [stack[2]] 
+         = [2]  // a 的值
+    sp = sp - 1 = 2
+  
+  創建閉包:
+    closure = ClosureObject{
+      fn = 內層函數,
+      free = [2]  // ⭐ 捕獲了 a 的值
+    }
+  
+  push(closure)
+
+堆疊: [ClosureObject{newAdder}, 2, ClosureObject{inner, free=[2]}]
+```
+```
+指令: OpReturnValue
+
+執行:
+  returnValue = pop()  // ClosureObject{inner, free=[2]}
+  frame = popFrame()   // 返回到主程序
+  sp = frame.basePointer - 1 = 1 - 1 = 0
+  push(returnValue)
+
+堆疊: [ClosureObject{inner, free=[2]}]
+```
+```
+指令: OpSetGlobal 1
+
+執行:
+  globals[1] = pop()  // ClosureObject{inner, free=[2]}
+
+堆疊: []
+全局: globals[1] = ClosureObject{inner, free=[2]}  // addTwo
+```
+
+### 階段 3：調用 addTwo(3)
+```
+指令: OpGetGlobal 1
+堆疊: [ClosureObject{inner, free=[2]}]
+
+指令: OpConstant 1  // 3
+堆疊: [ClosureObject{inner, free=[2]}, 3]
+```
+```
+指令: OpCall 1
+
+執行:
+  callee = ClosureObject{inner, free=[2]}
+  numArgs = 1
+  
+  調用 callClosure:
+    basePointer = 1
+    創建調用幀: Frame{closure=inner, basePointer=1}
+    sp = 1 + 1 = 2
+    
+  堆疊佈局:
+    [ClosureObject{inner}, 3, ...]
+                           ↑
+                      basePointer
+  
+  執行內層函數:
+```
+
+#### 內層函數執行
+```
+指令: OpGetFree 0
+
+執行:
+  freeIndex = 0
+  closure = currentFrame().getClosure()  // ClosureObject{inner, free=[2]}
+  value = closure.getFree()[0] = 2  // ⭐ 獲取捕獲的 a
+  push(2)
+
+堆疊: [ClosureObject{inner}, 3, 2]
+```
+```
+指令: OpGetLocal 0
+
+執行:
+  localIndex = 0
+  value = stack[basePointer + 0] = stack[1] = 3  // 參數 b
+  push(3)
+
+堆疊: [ClosureObject{inner}, 3, 2, 3]
+```
+```
+指令: OpAdd
+
+執行:
+  right = pop() = 3
+  left = pop() = 2
+  result = 2 + 3 = 5
+  push(5)
+
+堆疊: [ClosureObject{inner}, 3, 5]
+```
+```
+指令: OpReturnValue
+
+執行:
+  returnValue = pop() = 5
+  frame = popFrame()
+  sp = frame.basePointer - 1 = 1 - 1 = 0
+  push(5)
+
+堆疊: [5]
+```
+
+**最終結果**：`5`
+
+---
+
+## 關鍵實現細節
+
+### 1. 自由變量的識別（編譯時）
+
+符號表通過 `resolve` 方法自動識別自由變量：
+```java
+public Symbol resolve(String name) {
+    // 1. 在當前作用域查找
+    Symbol symbol = store.get(name);
+    if (symbol != null) {
+        return symbol;  // 找到了，是局部變量
+    }
+    
+    // 2. 在外層作用域查找
+    if (outer != null) {
+        symbol = outer.resolve(name);
+        if (symbol == null) {
+            return null;  // 完全找不到
+        }
+        
+        // 3. 判斷是否需要作為自由變量
+        if (symbol.getScope() == SymbolScope.GLOBAL || 
+            symbol.getScope() == SymbolScope.BUILTIN) {
+            return symbol;  // 全局/內建，直接返回
+        }
+        
+        // 4. 定義為自由變量
+        return defineFree(symbol);
+    }
+    
+    return null;
+}
+```
+
+**關鍵決策**：
+- ✅ LOCAL → FREE（需要捕獲）
+- ✅ FREE → FREE（繼續傳遞）
+- ❌ GLOBAL → GLOBAL（無需捕獲，直接訪問）
+- ❌ BUILTIN → BUILTIN（無需捕獲，直接訪問）
+
+### 2. 自由變量的傳遞（編譯時）
+
+在離開函數作用域後，載入所有自由變量：
+```java
+// 獲取自由變量列表
+List<Symbol> freeSymbols = symbolTable.getFreeSymbols();
+
+// 獲取局部變量數量
+int numLocals = symbolTable.getNumDefinitions();
+
+// 離開作用域
+Instructions instructions = leaveScope();
+
+// ⭐ 關鍵：在外層作用域載入自由變量
+for (Symbol s : freeSymbols) {
+    loadSymbol(s);  // 根據 s 的作用域發射相應指令
+}
+
+// 創建函數
+CompiledFunctionObject compiledFn = new CompiledFunctionObject(
+    instructions, numLocals, numParams
+);
+
+// 發射 OpClosure
+emit(Opcode.OP_CLOSURE, fnIndex, freeSymbols.size());
+```
+
+**為什麼在離開作用域後載入？**
+
+因為此時我們回到了外層作用域，自由變量在這裡可能是：
+- LOCAL 變量（使用 OpGetLocal）
+- FREE 變量（使用 OpGetFree）
+- GLOBAL 變量（使用 OpGetGlobal）
+
+**示例**：
+```monkey
+fn(a) {          // 外層
+    fn(b) {      // 中間層
+        fn(c) {  // 內層
+            a + b + c
+        }
+    }
+}
+```
+
+內層函數的自由變量：`a`, `b`
+
+離開內層作用域後，在中間層：
+```
+OpGetFree 0    // a (在中間層是自由變量)
+OpGetLocal 0   // b (在中間層是局部變量)
+OpClosure 0 2  // 創建內層閉包
+```
+
+### 3. 閉包的創建（運行時）
+
+VM 中的 `pushClosure` 方法：
+```java
+private void pushClosure(int constIndex, int numFree) throws VMException {
+    // 1. 獲取編譯後的函數
+    MonkeyObject constant = constants.get(constIndex);
+    if (!(constant instanceof CompiledFunctionObject)) {
+        throw new VMException("not a function: " + constant);
+    }
+    CompiledFunctionObject function = (CompiledFunctionObject) constant;
+    
+    // 2. 從堆疊收集自由變量
+    MonkeyObject[] free = new MonkeyObject[numFree];
+    for (int i = 0; i < numFree; i++) {
+        free[i] = stack[sp - numFree + i];
+    }
+    sp = sp - numFree;  // 調整堆疊指針
+    
+    // 3. 創建閉包
+    ClosureObject closure = new ClosureObject(function, free);
+    
+    // 4. 推入堆疊
+    push(closure);
+}
+```
+
+**堆疊變化**：
+```
+執行前:
+  [..., free0, free1, free2]
+                          ↑
+                          sp
+
+收集自由變量:
+  free = [free0, free1, free2]
+
+執行後:
+  [..., ClosureObject{fn, free=[free0, free1, free2]}]
+                                                      ↑
+                                                      sp
+```
+
+### 4. 自由變量的訪問（運行時）
+
+VM 中處理 `OP_GET_FREE`：
+```java
+case OP_GET_FREE:
+    int freeIndex = ins.get(ip + 1) & 0xFF;
+    currentFrame().ip += 1;
+
+    // 從當前閉包獲取自由變量
+    ClosureObject currentClosure = currentFrame().getClosure();
+    push(currentClosure.getFree()[freeIndex]);
+    break;
+```
+
+**關鍵點**：
+- 從當前調用幀獲取閉包
+- 從閉包的 free 數組中取值
+- 推入堆疊
+
+### 5. 遞歸函數的支持
+
+**關鍵修改**：在 `compileLetStatement` 中先定義符號
+```java
+private void compileLetStatement(LetStatement letStmt) throws CompilerException {
+    // ⭐ 先定義符號（重要！）
+    Symbol symbol = symbolTable.define(letStmt.getName().getValue());
+    
+    // 然後編譯值
+    compile(letStmt.getValue());
+    
+    // 最後發射賦值指令
+    if (symbol.getScope() == SymbolScope.GLOBAL) {
+        emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
+    } else {
+        emit(Opcode.OP_SET_LOCAL, symbol.getIndex());
+    }
+}
+```
+
+**為什麼這樣做？**
+```monkey
+let fib = fn(n) {
+    if (n < 2) {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)  // ⭐ 引用自己
+    }
+};
+```
+
+執行順序：
+1. `define("fib")` - 符號表中有 `fib`
+2. 編譯 `fn(n) { ... }`
+3. 在函數體中遇到 `fib(n-1)`
+4. `resolve("fib")` - ✅ 找到了！
+5. 發射 `OpGetGlobal 0`
+6. 編譯完成後，`OpSetGlobal 0` 將閉包賦值給 `fib`
+
+如果順序錯誤（先編譯值再定義符號）：
+1. 編譯 `fn(n) { ... }`
+2. 在函數體中遇到 `fib(n-1)`
+3. `resolve("fib")` - ❌ 未定義！
+4. 編譯錯誤
+
+---
+
+## 嵌套閉包
+
+### 三層嵌套示例
+```monkey
+fn(a) {
+    fn(b) {
+        fn(c) {
+            a + b + c
+        }
+    }
+}
+```
+
+### 編譯結果
+
+**最內層函數**（常量池索引 0）：
+```
+OpGetFree 0     // a (從最外層捕獲)
+OpGetFree 1     // b (從中間層捕獲)
+OpAdd
+OpGetLocal 0    // c (當前層參數)
+OpAdd
+OpReturnValue
+```
+
+**中間層函數**（常量池索引 1）：
+```
+OpGetFree 0     // a (從外層捕獲，標記為自由變量)
+OpGetLocal 0    // b (當前層參數，但需傳給內層)
+OpClosure 0 2   // 創建最內層閉包，2 個自由變量
+OpReturnValue
+```
+
+**最外層函數**（常量池索引 2）：
+```
+OpGetLocal 0    // a (當前層參數，但需傳給內層)
+OpClosure 1 1   // 創建中間層閉包，1 個自由變量
+OpReturnValue
+```
+
+**主程序**：
+```
+OpClosure 2 0   // 創建最外層閉包，0 個自由變量
+OpPop
+```
+
+### 關鍵洞察
+
+對於中間層函數：
+- `a` 是**自由變量**（使用 OpGetFree）
+- `b` 是**局部變量**（使用 OpGetLocal）
+- 但**兩者都需要傳遞給內層函數**
+
+這展示了**自由變量的相對性**：
+- 在中間層看來，`a` 是自由變量
+- 在內層看來，`a` 和 `b` 都是自由變量
+- 但在最外層看來，`a` 只是普通的局部參數
+
+---
+
+## 測試
+
+### 運行測試
+```bash
+# 運行所有測試
+mvn test
+
+# 運行符號表測試
+mvn test -Dtest=SymbolTableTest
+
+# 運行編譯器測試
+mvn test -Dtest=CompilerTest
+
+# 運行 VM 測試
+mvn test -Dtest=VMTest
+
+# 運行特定測試
+mvn test -Dtest=SymbolTableTest#testResolveFree
+mvn test -Dtest=CompilerTest#testClosures
+mvn test -Dtest=VMTest#testClosures
+mvn test -Dtest=VMTest#testRecursiveFunctions
+```
+
+### 測試覆蓋
+
+#### 符號表測試（SymbolTableTest）
+
+✅ **testResolveFree**
+- 自由變量的正確識別
+- 嵌套作用域中的解析
+- `freeSymbols` 列表的正確性
+
+✅ **testResolveUnresolvableFree**
+- 無法解析的變量檢測
+- 不會將不存在的變量標記為自由變量
+
+#### 編譯器測試（CompilerTest）
+
+✅ **testClosures**
+- 簡單閉包編譯
+- 嵌套閉包編譯（三層）
+- 全局變量、局部變量和自由變量混合
+- OpClosure 指令的正確生成
+- OpGetFree 指令的正確生成
+
+✅ **testFunctions** (更新)
+- 所有函數都使用 OpClosure
+
+✅ **testFunctionCalls** (更新)
+- 函數調用使用閉包
+
+#### VM 測試（VMTest）
+
+✅ **testClosures**
+- 簡單閉包執行
+- 多參數閉包
+- 嵌套閉包執行
+- 深度嵌套閉包
+- 全局變量與閉包混合
+- 多個獨立閉包
+
+✅ **testRecursiveFunctions**
+- 簡單遞歸（countdown）
+- 斐波那契數列
+- 嵌套函數中的遞歸
+
+✅ **testClosuresWithBuiltins**
+- 閉包與內建函數結合使用
+- 高階函數（map, reduce）
+
+---
+
+## 完整示例
+
+### 示例 1：簡單閉包
+```monkey
+let newAdder = fn(a) {
+    fn(b) { a + b };
+};
+let addTwo = newAdder(2);
+addTwo(3);  // => 5
+```
+
+**執行流程**：
+1. 創建 `newAdder` 閉包
+2. 調用 `newAdder(2)`，返回內層閉包（`free=[2]`）
+3. 調用內層閉包 `(3)`，訪問 `free[0]=2`，計算 `2+3=5`
+
+### 示例 2：計數器
+```monkey
+let newCounter = fn() {
+    let count = 0;
+    fn() {
+        let count = count + 1;
+        count
+    };
+};
+
+let counter = newCounter();
+counter();  // => 1
+counter();  // => 2
+```
+
+**注意**：每次調用都會創建新的 `count` 局部變量，不會真正累加。要實現真正的計數器需要可變狀態。
+
+### 示例 3：柯里化
+```monkey
+let add = fn(a) {
+    fn(b) {
+        fn(c) {
+            a + b + c
+        };
+    };
+};
+
+let add2 = add(2);
+let add2And3 = add2(3);
+add2And3(4);  // => 9
+```
+
+**執行流程**：
+1. `add(2)` → 返回閉包（`free=[2]`）
+2. `add2(3)` → 返回閉包（`free=[2, 3]`）
+3. `add2And3(4)` → 計算 `2+3+4=9`
+
+### 示例 4：高階函數 - Map
+```monkey
+let map = fn(arr, f) {
+    let iter = fn(arr, accumulated) {
+        if (len(arr) == 0) {
+            accumulated
+        } else {
+            iter(rest(arr), push(accumulated, f(first(arr))));
+        }
+    };
+    iter(arr, []);
+};
+
+let double = fn(x) { x * 2 };
+map([1, 2, 3, 4], double);  // => [2, 4, 6, 8]
+```
+
+**閉包的使用**：
+- `iter` 捕獲 `f`（自由變量）
+- `iter` 遞歸調用自己（全局變量）
+- `f` 在每次迭代中被調用
+
+### 示例 5：斐波那契數列
+```monkey
+let fibonacci = fn(n) {
+    if (n < 2) {
+        n
+    } else {
+        fibonacci(n - 1) + fibonacci(n - 2)
+    }
+};
+
+fibonacci(10);  // => 55
+```
+
+**遞歸機制**：
+- `fibonacci` 定義為全局變量
+- 函數體內引用全局的 `fibonacci`
+- 每次調用創建新的調用幀
+
+### 示例 6：閉包與全局變量
+```monkey
+let global = 10;
+
+let makeAdder = fn(a) {
+    fn(b) { global + a + b };
+};
+
+let adder = makeAdder(5);
+adder(3);  // => 18
+```
+
+**變量訪問**：
+- `global`: OpGetGlobal（全局訪問）
+- `a`: OpGetFree（自由變量）
+- `b`: OpGetLocal（局部參數）
+
+---
+
+## 性能考量
+
+### 1. 內存使用
+
+**閉包開銷**：
+- 每個閉包對象：16 bytes (對象頭) + 8 bytes (fn指針) + 8 bytes (free數組指針)
+- 自由變量數組：8 bytes × 自由變量數量
+
+**示例**：
+```monkey
+fn(a, b, c) {
+    fn() { a + b + c }  // 3 個自由變量
+}
+```
+- 內層閉包：32 bytes + 24 bytes (3個引用) = 56 bytes
+
+### 2. 執行效率
+
+**操作時間複雜度**：
+- `OpGetFree`: O(1) - 數組索引訪問
+- `OpClosure`: O(n) - n 為自由變量數量
+- 閉包調用：與普通函數相同
+
+**vs 普通函數**：
+- 創建：閉包需要複製自由變量（+O(n)）
+- 調用：開銷相同
+- 變量訪問：自由變量需要額外的數組訪問
+
+### 3. 優化機會（未實現）
+
+**可能的優化**：
+
+1. **非閉包函數檢測**
+```monkey
+   fn(a, b) { a + b }  // 無自由變量，不需要閉包
+```
+可以避免閉包包裝
+
+2. **共享不可變自由變量**
+```monkey
+   let x = 10;
+   fn() { x }  // x 不可變，可以共享
+```
+
+3. **內聯簡單閉包**
+```monkey
+   let add = fn(a, b) { a + b };
+   add(1, 2);  // 可以內聯
+```
+
+4. **逃逸分析**
+    - 檢測閉包是否逃逸作用域
+    - 未逃逸的閉包可以在堆疊上分配
+
+---
+
+## 常見問題
+
+### Q1: 為什麼將每個函數都視為閉包？
+
+**A**: 統一設計，簡化實現
+
+**優點**：
+- 統一的調用約定
+- 減少特殊情況處理
+- 編譯器和 VM 邏輯更簡單
+- 後續優化更容易
+
+**代價**：
+- 輕微的內存和性能開銷
+- 可以通過優化消除
+
+### Q2: 自由變量是如何傳遞的？
+
+**A**: 通過堆疊
+
+**步驟**：
+1. 編譯時：離開函數作用域後，將自由變量載入堆疊
+2. 運行時：OpClosure 從堆疊收集自由變量
+3. 存儲在閉包的 free 數組中
+4. OpGetFree 從 free 數組訪問
+
+**示例**：
+```
+編譯: OpGetLocal 0; OpClosure 0 1
+運行: stack[2] → free[0] → closure
+```
+
+### Q3: 為什麼需要 FREE 作用域？
+
+**A**: 區分變量的訪問方式
+
+**不同作用域的訪問**：
+- GLOBAL → OpGetGlobal（全局存儲）
+- LOCAL → OpGetLocal（當前堆疊幀）
+- FREE → OpGetFree（閉包的 free 數組）
+- BUILTIN → OpGetBuiltin（內建函數表）
+
+每種作用域需要不同的訪問機制。
+
+### Q4: 閉包如何支持遞歸？
+
+**A**: 通過全局或外層作用域的符號
+
+**全局遞歸**：
+```monkey
+let fib = fn(n) {
+    if (n < 2) { n }
+    else { fib(n-1) + fib(n-2) }  // 引用全局的 fib
+};
+```
+
+**局部遞歸**：
+```monkey
+let outer = fn() {
+    let inner = fn(n) {
+        if (n == 0) { 0 }
+        else { inner(n-1) }  // 引用外層的 inner
+    };
+    inner(5)
+};
+```
+
+**關鍵**：先定義符號，再編譯函數體
+
+### Q5: 多個閉包可以共享自由變量嗎？
+
+**A**: 不可以，每個閉包都有自己的副本
+
+**當前實現**：
+```monkey
+let x = 10;
+let f1 = fn() { x };
+let f2 = fn() { x };
+// f1 和 f2 各有 x 的獨立副本
+```
+
+**如果需要共享狀態**：
+- 使用全局變量
+- 或使用引用類型（如數組、哈希）
+
+### Q6: 閉包的 free 數組是如何排序的？
+
+**A**: 按照符號表中的添加順序
+
+**示例**：
+```monkey
+fn(a, b) {
+    fn() {
+        b + a  // 順序: b, a
+    }
+}
+```
+
+符號表解析順序：
+1. 解析 `b` → 添加到 freeSymbols[0]
+2. 解析 `a` → 添加到 freeSymbols[1]
+
+載入順序：
+```
+OpGetLocal 1    // b → stack[top]
+OpGetLocal 0    // a → stack[top+1]
+OpClosure 0 2   // free = [b, a]
+```
+
+訪問：
+```
+OpGetFree 0     // freeSymbols[0] = b
+OpGetFree 1     // freeSymbols[1] = a
+```
+
+### Q7: 為什麼全局變量不作為自由變量？
+
+**A**: 全局變量在任何地方都可訪問
+
+**原因**：
+- 全局變量有全局存儲（globals 數組）
+- 不需要通過閉包攜帶
+- 直接使用 OpGetGlobal 訪問即可
+
+**效率比較**：
+```
+全局變量:
+  OpGetGlobal 0     // 1 條指令
+
+如果作為自由變量:
+  OpGetFree 0       // 1 條指令
+  + 創建時複製      // 額外開銷
+```
+
+### Q8: 閉包可以修改自由變量嗎？
+
+**A**: 不可以直接修改
+
+**當前實現**：
+- 自由變量是值的副本
+- 修改不會影響原始值
+
+**示例**：
+```monkey
+let x = 10;
+let f = fn() {
+    let x = x + 1;  // 創建新的局部 x，不修改外層 x
+    x
+};
+f();  // => 11
+x;    // => 10 (未改變)
+```
+
+**如果需要可變狀態**：
+- 使用數組或哈希
+- 使用全局變量
+
+---
+
+## 與原書的差異
+
+### 語言特性
+
+✅ **強類型數組**
+- Java: `MonkeyObject[]`
+- Go: `[]object.Object`
+
+✅ **顯式類型轉換**
+- Java 需要強制類型轉換
+- Go 使用類型斷言
+
+✅ **面向對象設計**
+- Java 使用類和接口
+- Go 使用結構體和方法
+
+### 設計模式
+
+✅ **不可變對象**
+- 閉包的 `fn` 和 `free` 都是 `final`
+- 保證線程安全
+
+✅ **空安全**
+- 使用 null 檢查
+- 避免 NullPointerException
+
+✅ **異常處理**
+- 使用異常而非錯誤返回值
+- 更符合 Java 慣例
+
+### 命名慣例
+
+✅ **駝峰命名**
+- Java: `getFreeSymbols()`
+- Go: `FreeSymbols`
+
+✅ **類命名**
+- Java: `ClosureObject`
+- Go: `object.Closure`
+
+✅ **包結構**
+- Java: `com.monkey.object`
+- Go: `monkey/object`
+
+---
+
+## 附錄A：完整的操作碼列表（截至第九章）
+
+| 操作碼 | 值 | 操作數 | 描述 | 章節 |
+|--------|-----|--------|------|------|
+| OP_CONSTANT | 0 | 2 bytes | 載入常量 | Ch2 |
+| OP_ADD | 1 | - | 加法 | Ch2 |
+| OP_POP | 5 | - | 彈出堆疊頂 | Ch2 |
+| OP_SUB | 2 | - | 減法 | Ch3 |
+| OP_MUL | 3 | - | 乘法 | Ch3 |
+| OP_DIV | 4 | - | 除法 | Ch3 |
+| OP_TRUE | 6 | - | 推入 true | Ch3 |
+| OP_FALSE | 7 | - | 推入 false | Ch3 |
+| OP_EQUAL | 8 | - | 相等比較 | Ch3 |
+| OP_NOT_EQUAL | 9 | - | 不等比較 | Ch3 |
+| OP_GREATER_THAN | 10 | - | 大於比較 | Ch3 |
+| OP_MINUS | 11 | - | 取負 | Ch3 |
+| OP_BANG | 12 | - | 邏輯非 | Ch3 |
+| OP_JUMP_NOT_TRUTHY | 13 | 2 bytes | 條件跳轉 | Ch4 |
+| OP_JUMP | 14 | 2 bytes | 無條件跳轉 | Ch4 |
+| OP_NULL | 15 | - | 推入 null | Ch4 |
+| OP_GET_GLOBAL | 16 | 2 bytes | 獲取全局變量 | Ch5 |
+| OP_SET_GLOBAL | 17 | 2 bytes | 設置全局變量 | Ch5 |
+| OP_ARRAY | 18 | 2 bytes | 構建陣列 | Ch6 |
+| OP_HASH | 19 | 2 bytes | 構建雜湊表 | Ch6 |
+| OP_INDEX | 20 | - | 索引訪問 | Ch6 |
+| OP_CALL | 21 | 1 byte | 函數調用 | Ch7 |
+| OP_RETURN_VALUE | 22 | - | 返回值 | Ch7 |
+| OP_RETURN | 23 | - | 返回（無值） | Ch7 |
+| OP_GET_LOCAL | 24 | 1 byte | 獲取局部變量 | Ch7 |
+| OP_SET_LOCAL | 25 | 1 byte | 設置局部變量 | Ch7 |
+| OP_GET_BUILTIN | 26 | 1 byte | 獲取內建函數 | Ch8 |
+| **OP_CLOSURE** | **27** | **2+1 bytes** | **創建閉包** | **Ch9** |
+| **OP_GET_FREE** | **28** | **1 byte** | **獲取自由變量** | **Ch9** |
+
+---
+
+## 附錄B：符號作用域對照表
+
+| 作用域 | 用途 | 訪問指令 | 存儲位置 | 章節 |
+|--------|------|----------|----------|------|
+| GLOBAL | 全局變量 | OpGetGlobal, OpSetGlobal | globals 數組 | Ch5 |
+| LOCAL | 局部變量/參數 | OpGetLocal, OpSetLocal | 堆疊幀 | Ch7 |
+| BUILTIN | 內建函數 | OpGetBuiltin | Builtins 表 | Ch8 |
+| **FREE** | **自由變量** | **OpGetFree** | **閉包 free 數組** | **Ch9** |
+
+---
+
+## 附錄C：調試技巧
+
+### 1. 打印符號表
+```java
+private void printSymbolTable(SymbolTable table, String prefix) {
+    System.out.println(prefix + "Store:");
+    for (Map.Entry<String, Symbol> entry : table.store.entrySet()) {
+        System.out.println(prefix + "  " + entry.getKey() + " -> " + entry.getValue());
+    }
+    
+    System.out.println(prefix + "Free Symbols:");
+    for (Symbol sym : table.getFreeSymbols()) {
+        System.out.println(prefix + "  " + sym);
+    }
+    
+    if (table.getOuter() != null) {
+        printSymbolTable(table.getOuter(), prefix + "  ");
+    }
+}
+```
+
+### 2. 打印閉包內容
+```java
+private void printClosure(ClosureObject closure) {
+    System.out.println("Closure:");
+    System.out.println("  Function: " + closure.getFn());
+    System.out.println("  Free variables:");
+    for (int i = 0; i < closure.getFree().length; i++) {
+        System.out.println("    [" + i + "] = " + closure.getFree()[i].inspect());
+    }
+}
+```
+
+### 3. 追蹤編譯過程
+```java
+private void compile(Node node) throws CompilerException {
+    System.out.println("Compiling: " + node.getClass().getSimpleName());
+    System.out.println("Current scope index: " + scopeIndex);
+    
+    // ... 原有代碼 ...
+}
+```
+
+### 4. 追蹤 VM 執行
+```java
+public void run() throws VMException {
+    while (currentFrame().ip < currentFrame().instructions().size() - 1) {
+        currentFrame().ip++;
+        
+        System.out.println("IP: " + currentFrame().ip);
+        System.out.println("Op: " + op);
+        System.out.println("Stack: " + Arrays.toString(Arrays.copyOf(stack, sp)));
+        
+        // ... 原有代碼 ...
+    }
+}
+```
+
+---
+
+## 章節總結
+
+第九章實現了閉包系統，這是本書最複雜的特性：
+
+### 新增組件
+
+1. **ClosureObject** - 閉包對象（函數 + 自由變量）
+2. **FREE 作用域** - 第四種符號作用域
+3. **自由變量追蹤** - 符號表擴展
+
+### 新增操作碼
+
+- **OP_CLOSURE** - 創建閉包（2+1 bytes）
+- **OP_GET_FREE** - 獲取自由變量（1 byte）
+
+### 關鍵實現
+
+✅ **自動識別自由變量**
+- 符號表的 resolve 方法
+- 區分 LOCAL、GLOBAL、BUILTIN、FREE
+
+✅ **自由變量傳遞機制**
+- 編譯時：離開作用域後載入
+- 運行時：OpClosure 收集
+
+✅ **嵌套閉包支持**
+- 自由變量的相對性
+- FREE → FREE 的傳遞
+
+✅ **遞歸函數支持**
+- 先定義符號，再編譯值
+- 全局和局部遞歸都支持
+
+✅ **統一的調用約定**
+- 所有函數都是閉包
+- 簡化編譯器和 VM
+
+### 核心設計決策
+
+1. **將所有函數視為閉包** - 統一設計
+2. **通過堆疊傳遞自由變量** - 簡單高效
+3. **在離開作用域後載入** - 在正確的作用域
+4. **使用數組存儲自由變量** - O(1) 訪問
+5. **先定義後編譯** - 支持遞歸
+
+### 實現完整度
+
+- ✅ 簡單閉包
+- ✅ 嵌套閉包（任意深度）
+- ✅ 遞歸函數（全局和局部）
+- ✅ 與內建函數結合
+- ✅ 高階函數（map, reduce）
+
+---
+
+## 下一步
+
+完成了閉包實現，Monkey 編譯器已經具備了：
+- ✅ 完整的表達式和語句
+- ✅ 函數和閉包
+- ✅ 複合數據類型（數組、哈希）
+- ✅ 內建函數
+- ✅ 局部和全局變量
+- ✅ 遞歸
+
+這是一個功能完整的編譯器！
+
+可能的擴展方向：
+- 性能優化（內聯、逃逸分析）
+- 更多內建函數
+- 模塊系統
+- 類型系統
+- 垃圾回收
+
+---
+
+
+## 許可證
+
+本實現僅供學習使用，遵循原書的教育目的。
+
+---
+
+**恭喜完成第九章！** 🎉
+
+你已經實現了一個支持閉包的完整編譯器，這是編程語言實現中最具挑戰性的特性之一。
+
+
 
 
 

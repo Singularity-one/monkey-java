@@ -59,40 +59,6 @@ public class InstructionsTest {
     }
 
     /**
-     * 測試指令的字符串表示(反彙編)
-     *
-     * 這是調試的關鍵工具!
-     * 我們希望看到可讀的輸出,而不是原始字節
-     */
-    @Test
-    public void testInstructionsString() {
-        Instructions[] instructions = new Instructions[]{
-                new Instructions(Instructions.make(Opcode.OP_ADD)),
-                new Instructions(Instructions.make(Opcode.OP_CONSTANT, 2)),
-                new Instructions(Instructions.make(Opcode.OP_CONSTANT, 65535)),
-                new Instructions(Instructions.make(Opcode.OP_POP))
-        };
-
-        // 期望的輸出格式:
-        // 0000 OpAdd
-        // 0001 OpConstant 2
-        // 0004 OpConstant 65535
-        // 0007 OpPop
-        String expected =
-                "0000 OpAdd\n" +
-                        "0001 OpConstant 2\n" +
-                        "0004 OpConstant 65535\n" +
-                        "0007 OpPop\n";
-
-        // 連接所有指令
-        Instructions concatenated = new Instructions();
-        for (Instructions ins : instructions) {
-            concatenated.append(ins.toByteArray());
-        }
-        assertEquals(expected, concatenated.toString(), "instructions wrongly formatted");
-    }
-
-    /**
      * 測試讀取操作數
      *
      * 這是 make() 的反向操作
@@ -155,5 +121,35 @@ public class InstructionsTest {
             this.operands = operands;
             this.bytesRead = bytesRead;
         }
+    }
+
+    /**
+     * Chapter 9: 測試 OpClosure 指令的格式化
+     */
+    @Test
+    public void testInstructionsString() {
+        byte[][] instructions = {
+                Instructions.make(Opcode.OP_ADD),
+                Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                Instructions.make(Opcode.OP_CONSTANT, 2),
+                Instructions.make(Opcode.OP_CONSTANT, 65535),
+                Instructions.make(Opcode.OP_CLOSURE, 65535, 255)  // 測試兩個操作數
+        };
+
+        String expected = """
+            0000 OpAdd
+            0001 OpGetLocal 1
+            0003 OpConstant 2
+            0006 OpConstant 65535
+            0009 OpClosure 65535 255
+            """;
+
+        Instructions concatted = new Instructions();
+        for (byte[] ins : instructions) {
+            concatted.append(ins);
+        }
+
+        assertEquals(expected, concatted.string(),
+                "instructions wrongly formatted");
     }
 }

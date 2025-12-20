@@ -31,7 +31,12 @@ public enum Opcode {
     OP_SET_LOCAL((byte) 25),     // 設置局部變量 (操作數: 局部索引)
 
     // Chapter 8 - 內建函數
-    OP_GET_BUILTIN((byte) 26);  // 獲取內建函數 (操作數: 內建函數索引)
+    OP_GET_BUILTIN((byte) 26),  // 獲取內建函數 (操作數: 內建函數索引)
+
+    // Chapter 9 - 閉包
+    OP_CLOSURE((byte) 27),      // 創建閉包 (操作數: 函數索引, 自由變量數量)
+    OP_GET_FREE((byte) 28)     // 獲取自由變量 (操作數: 自由變量索引)
+    ;
 
     private final byte value;
 

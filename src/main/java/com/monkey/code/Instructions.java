@@ -64,6 +64,10 @@ public class Instructions {
 
         // Chapter 8 - 內建函數
         DEFINITIONS.put(Opcode.OP_GET_BUILTIN, new Definition("OpGetBuiltin", new int[]{1}));
+
+        // Chapter 9 - 閉包
+        DEFINITIONS.put(Opcode.OP_CLOSURE, new Definition("OpClosure", new int[]{2, 1}));
+        DEFINITIONS.put(Opcode.OP_GET_FREE, new Definition("OpGetFree", new int[]{1}));
     }
 
     public Instructions() {
@@ -277,5 +281,13 @@ public class Instructions {
         public int[] getOperandWidths() {
             return operandWidths;
         }
+    }
+
+    /**
+     * 返回指令的字符串表示形式
+     * 這是 toString() 的別名，用於測試
+     */
+    public String string() {
+        return toString();
     }
 }

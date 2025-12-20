@@ -11,7 +11,9 @@ public enum ObjectType {
     BUILTIN("BUILTIN"),
     ARRAY("ARRAY"),
     HASH("HASH"),
-    COMPILED_FUNCTION("COMPILED_FUNCTION");  // ⭐ 第七章新增
+    COMPILED_FUNCTION("COMPILED_FUNCTION"), // 第七章新增
+    CLOSURE("CLOSURE") // 第九章新增
+    ;
 
     private final String value;
 

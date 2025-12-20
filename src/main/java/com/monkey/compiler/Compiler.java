@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 8: Built-in Functions (擴展)
+ * Chapter 9: Closures (擴展)
  */
 public class Compiler {
     private final List<MonkeyObject> constants;
@@ -26,7 +26,7 @@ public class Compiler {
         this.scopes = new ArrayList<>();
         this.scopeIndex = 0;
 
-        // Chapter 8: 定義所有內建函數
+        // 定義所有內建函數
         for (int i = 0; i < Builtins.BUILTINS.length; i++) {
             symbolTable.defineBuiltin(i, Builtins.BUILTINS[i].name);
         }
@@ -186,6 +186,9 @@ public class Compiler {
         }
     }
 
+    /**
+     * Chapter 9: 編譯函數字面量 (支持閉包)
+     */
     private void compileFunctionLiteral(FunctionLiteral fn) throws CompilerException {
         enterScope();
 
@@ -202,8 +205,16 @@ public class Compiler {
             emit(Opcode.OP_RETURN);
         }
 
+        // Chapter 9: 獲取自由變量
+        List<Symbol> freeSymbols = symbolTable.getFreeSymbols();
         int numLocals = symbolTable.getNumDefinitions();
+
         Instructions instructions = leaveScope();
+
+        // Chapter 9: 載入自由變量到堆疊
+        for (Symbol s : freeSymbols) {
+            loadSymbol(s);
+        }
 
         CompiledFunctionObject compiledFn = new CompiledFunctionObject(
                 instructions,
@@ -211,7 +222,10 @@ public class Compiler {
                 fn.getParameters().size()
         );
 
-        emit(Opcode.OP_CONSTANT, addConstant(compiledFn));
+        int fnIndex = addConstant(compiledFn);
+
+        // Chapter 9: 發射 OpClosure 指令
+        emit(Opcode.OP_CLOSURE, fnIndex, freeSymbols.size());
     }
 
     private void replaceLastPopWithReturn() {
@@ -243,10 +257,12 @@ public class Compiler {
     }
 
     private void compileLetStatement(LetStatement letStmt) throws CompilerException {
-        compile(letStmt.getValue());
-
         Symbol symbol = symbolTable.define(letStmt.getName().getValue());
 
+        // 然後編譯右側的值
+        compile(letStmt.getValue());
+
+        // 最後發射賦值指令
         if (symbol.getScope() == SymbolScope.GLOBAL) {
             emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
         } else {
@@ -254,9 +270,6 @@ public class Compiler {
         }
     }
 
-    /**
-     * Chapter 8: 編譯標識符 (支持內建函數)
-     */
     private void compileIdentifier(Identifier ident) throws CompilerException {
         Symbol symbol = symbolTable.resolve(ident.getValue());
         if (symbol == null) {
@@ -267,7 +280,7 @@ public class Compiler {
     }
 
     /**
-     * Chapter 8: 根據符號作用域載入符號
+     * Chapter 9: 根據符號作用域載入符號 (支持自由變量)
      */
     private void loadSymbol(Symbol symbol) {
         switch (symbol.getScope()) {
@@ -279,6 +292,9 @@ public class Compiler {
                 break;
             case BUILTIN:
                 emit(Opcode.OP_GET_BUILTIN, symbol.getIndex());
+                break;
+            case FREE:
+                emit(Opcode.OP_GET_FREE, symbol.getIndex());
                 break;
         }
     }

@@ -169,6 +169,122 @@ public class SymbolTableTest {
         }
     }
 
+    /**
+     * Chapter 9: 測試自由變量的解析
+     */
+    @Test
+    public void testResolveFree() {
+        SymbolTable global = new SymbolTable();
+        global.define("a");
+        global.define("b");
+
+        SymbolTable firstLocal = SymbolTable.newEnclosed(global);
+        firstLocal.define("c");
+        firstLocal.define("d");
+
+        SymbolTable secondLocal = SymbolTable.newEnclosed(firstLocal);
+        secondLocal.define("e");
+        secondLocal.define("f");
+
+        TestCase[] tests = new TestCase[]{
+                new TestCase(
+                        firstLocal,
+                        new Symbol[]{
+                                new Symbol("a", SymbolScope.GLOBAL, 0),
+                                new Symbol("b", SymbolScope.GLOBAL, 1),
+                                new Symbol("c", SymbolScope.LOCAL, 0),
+                                new Symbol("d", SymbolScope.LOCAL, 1)
+                        },
+                        new Symbol[]{}
+                ),
+                new TestCase(
+                        secondLocal,
+                        new Symbol[]{
+                                new Symbol("a", SymbolScope.GLOBAL, 0),
+                                new Symbol("b", SymbolScope.GLOBAL, 1),
+                                new Symbol("c", SymbolScope.FREE, 0),
+                                new Symbol("d", SymbolScope.FREE, 1),
+                                new Symbol("e", SymbolScope.LOCAL, 0),
+                                new Symbol("f", SymbolScope.LOCAL, 1)
+                        },
+                        new Symbol[]{
+                                new Symbol("c", SymbolScope.LOCAL, 0),
+                                new Symbol("d", SymbolScope.LOCAL, 1)
+                        }
+                )
+        };
+
+        for (TestCase tt : tests) {
+            for (Symbol sym : tt.expectedSymbols) {
+                Symbol result = tt.table.resolve(sym.getName());
+                assertNotNull(result, "name " + sym.getName() + " not resolvable");
+                assertEquals(sym, result,
+                        String.format("expected %s to resolve to %s, got=%s",
+                                sym.getName(), sym, result));
+            }
+
+            assertEquals(tt.expectedFreeSymbols.length, tt.table.getFreeSymbols().size(),
+                    "wrong number of free symbols");
+
+            for (int i = 0; i < tt.expectedFreeSymbols.length; i++) {
+                Symbol result = tt.table.getFreeSymbols().get(i);
+                assertEquals(tt.expectedFreeSymbols[i], result,
+                        String.format("wrong free symbol. got=%s, want=%s",
+                                result, tt.expectedFreeSymbols[i]));
+            }
+        }
+    }
+
+    /**
+     * Chapter 9: 測試無法解析的自由變量
+     */
+    @Test
+    public void testResolveUnresolvableFree() {
+        SymbolTable global = new SymbolTable();
+        global.define("a");
+
+        SymbolTable firstLocal = SymbolTable.newEnclosed(global);
+        firstLocal.define("c");
+
+        SymbolTable secondLocal = SymbolTable.newEnclosed(firstLocal);
+        secondLocal.define("e");
+        secondLocal.define("f");
+
+        Symbol[] expected = {
+                new Symbol("a", SymbolScope.GLOBAL, 0),
+                new Symbol("c", SymbolScope.FREE, 0),
+                new Symbol("e", SymbolScope.LOCAL, 0),
+                new Symbol("f", SymbolScope.LOCAL, 1)
+        };
+
+        for (Symbol sym : expected) {
+            Symbol result = secondLocal.resolve(sym.getName());
+            assertNotNull(result, "name " + sym.getName() + " not resolvable");
+            assertEquals(sym, result,
+                    String.format("expected %s to resolve to %s, got=%s",
+                            sym.getName(), sym, result));
+        }
+
+        String[] expectedUnresolvable = {"b", "d"};
+
+        for (String name : expectedUnresolvable) {
+            Symbol result = secondLocal.resolve(name);
+            assertNull(result, "name " + name + " resolved, but was expected not to");
+        }
+    }
+
+    private static class TestCase {
+        SymbolTable table;
+        Symbol[] expectedSymbols;
+        Symbol[] expectedFreeSymbols;
+
+        TestCase(SymbolTable table, Symbol[] expectedSymbols, Symbol[] expectedFreeSymbols) {
+            this.table = table;
+            this.expectedSymbols = expectedSymbols;
+            this.expectedFreeSymbols = expectedFreeSymbols;
+        }
+    }
+
     @Test
     public void testResolveUndefined() {
         SymbolTable global = new SymbolTable();

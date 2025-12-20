@@ -8,7 +8,7 @@ public enum SymbolScope {
     GLOBAL("GLOBAL"),
     LOCAL("LOCAL"),      // ⭐ 第七章新增
     BUILTIN("BUILTIN"),  // ⭐ 第八章新增
-    FREE("FREE"),
+    FREE("FREE"), // ⭐ 第九章新增
     FUNCTION("FUNCTION");
 
     private final String value;

@@ -210,7 +210,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CLOSURE, 2, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
@@ -227,7 +227,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CLOSURE, 2, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
@@ -244,7 +244,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CLOSURE, 2, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -266,7 +266,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -290,13 +290,16 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CLOSURE, 1, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_CALL, 0),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
                 new CompilerTestCase(
-                        "let noArg = fn() { 24 }; noArg();",
+                        """
+                        let noArg = fn() { 24 };
+                        noArg();
+                        """,
                         new Object[]{
                                 24,
                                 new Object[]{
@@ -305,10 +308,58 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CLOSURE, 1, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_SET_GLOBAL, 0),
                                 Instructions.make(Opcode.OP_GET_GLOBAL, 0),
                                 Instructions.make(Opcode.OP_CALL, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        """
+                        let oneArg = fn(a) { a };
+                        oneArg(1);
+                        """,
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                1
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CALL, 1),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        """
+                        let manyArg = fn(a, b, c) { a; b; c };
+                        manyArg(1, 2, 3);
+                        """,
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_POP),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 2),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                1, 2, 3
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CONSTANT, 3),
+                                Instructions.make(Opcode.OP_CALL, 3),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -323,7 +374,10 @@ public class CompilerTest {
     public void testLetStatementScopes() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
                 new CompilerTestCase(
-                        "let num = 55; fn() { num }",
+                        """
+                        let num = 55;
+                        fn() { num }
+                        """,
                         new Object[]{
                                 55,
                                 new Object[]{
@@ -334,12 +388,17 @@ public class CompilerTest {
                         new byte[][]{
                                 Instructions.make(Opcode.OP_CONSTANT, 0),
                                 Instructions.make(Opcode.OP_SET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CLOSURE, 1, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
                 new CompilerTestCase(
-                        "fn() { let num = 55; num }",
+                        """
+                        fn() {
+                            let num = 55;
+                            num
+                        }
+                        """,
                         new Object[]{
                                 55,
                                 new Object[]{
@@ -350,12 +409,18 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
+                                Instructions.make(Opcode.OP_CLOSURE, 1, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
                 new CompilerTestCase(
-                        "fn() { let a = 55; let b = 77; a + b }",
+                        """
+                        fn() {
+                            let a = 55;
+                            let b = 77;
+                            a + b
+                        }
+                        """,
                         new Object[]{
                                 55,
                                 77,
@@ -371,7 +436,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
+                                Instructions.make(Opcode.OP_CLOSURE, 2, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -394,7 +459,7 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 ),
@@ -411,7 +476,22 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+                new CompilerTestCase(
+                        "fn(a) { let b = a; b }",
+                        new Object[]{
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -426,62 +506,18 @@ public class CompilerTest {
     public void testFunctionCallsWithArguments() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
                 new CompilerTestCase(
-                        "fn(a) { a }(24);",
+                        "fn(a) { a }(1);",
                         new Object[]{
                                 new Object[]{
                                         Instructions.make(Opcode.OP_GET_LOCAL, 0),
                                         Instructions.make(Opcode.OP_RETURN_VALUE)
                                 },
-                                24
+                                1
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
                                 Instructions.make(Opcode.OP_CONSTANT, 1),
                                 Instructions.make(Opcode.OP_CALL, 1),
-                                Instructions.make(Opcode.OP_POP)
-                        }
-                ),
-                new CompilerTestCase(
-                        "let oneArg = fn(a) { a }; oneArg(24);",
-                        new Object[]{
-                                new Object[]{
-                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
-                                        Instructions.make(Opcode.OP_RETURN_VALUE)
-                                },
-                                24
-                        },
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_CALL, 1),
-                                Instructions.make(Opcode.OP_POP)
-                        }
-                ),
-                new CompilerTestCase(
-                        "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
-                        new Object[]{
-                                new Object[]{
-                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),
-                                        Instructions.make(Opcode.OP_POP),
-                                        Instructions.make(Opcode.OP_GET_LOCAL, 1),
-                                        Instructions.make(Opcode.OP_POP),
-                                        Instructions.make(Opcode.OP_GET_LOCAL, 2),
-                                        Instructions.make(Opcode.OP_RETURN_VALUE)
-                                },
-                                24,
-                                25,
-                                26
-                        },
-                        new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
-                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_GET_GLOBAL, 0),
-                                Instructions.make(Opcode.OP_CONSTANT, 1),
-                                Instructions.make(Opcode.OP_CONSTANT, 2),
-                                Instructions.make(Opcode.OP_CONSTANT, 3),
-                                Instructions.make(Opcode.OP_CALL, 3),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
@@ -496,7 +532,10 @@ public class CompilerTest {
     public void testBuiltins() {
         CompilerTestCase[] tests = new CompilerTestCase[]{
                 new CompilerTestCase(
-                        "len([]); push([], 1);",
+                        """
+                        len([]);
+                        push([], 1);
+                        """,
                         new Object[]{1},
                         new byte[][]{
                                 Instructions.make(Opcode.OP_GET_BUILTIN, 0),
@@ -521,7 +560,147 @@ public class CompilerTest {
                                 }
                         },
                         new byte[][]{
-                                Instructions.make(Opcode.OP_CONSTANT, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 0, 0),  // 改為 OpClosure
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                )
+        };
+        runCompilerTests(tests);
+    }
+
+    /**
+     * Chapter 9: 測試閉包編譯
+     */
+    @Test
+    public void testClosures() {
+        CompilerTestCase[] tests = new CompilerTestCase[]{
+                // 測試 1: 簡單閉包
+                new CompilerTestCase(
+                        """
+                        fn(a) {
+                            fn(b) {
+                                a + b
+                            }
+                        }
+                        """,
+                        new Object[]{
+                                // 內層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_FREE, 0),  // a
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0), // b
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                // 外層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // a
+                                        Instructions.make(Opcode.OP_CLOSURE, 0, 1), // 1個自由變量
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CLOSURE, 1, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+
+                // 測試 2: 嵌套閉包
+                new CompilerTestCase(
+                        """
+                        fn(a) {
+                            fn(b) {
+                                fn(c) {
+                                    a + b + c
+                                }
+                            }
+                        };
+                        """,
+                        new Object[]{
+                                // 最內層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_FREE, 0),  // a
+                                        Instructions.make(Opcode.OP_GET_FREE, 1),  // b
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0), // c
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                // 中間層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_FREE, 0),   // a
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // b
+                                        Instructions.make(Opcode.OP_CLOSURE, 0, 2), // 2個自由變量
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                // 外層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // a
+                                        Instructions.make(Opcode.OP_CLOSURE, 1, 1), // 1個自由變量
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CLOSURE, 2, 0),
+                                Instructions.make(Opcode.OP_POP)
+                        }
+                ),
+
+                // 測試 3: 全局變量、局部變量和自由變量
+                new CompilerTestCase(
+                        """
+                        let global = 55;
+                        
+                        fn() {
+                            let a = 66;
+                            
+                            fn() {
+                                let b = 77;
+                                
+                                fn() {
+                                    let c = 88;
+                                    
+                                    global + a + b + c;
+                                }
+                            }
+                        }
+                        """,
+                        new Object[]{
+                                55, 66, 77, 88,
+                                // 最內層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 3),  // 88
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 0), // c
+                                        Instructions.make(Opcode.OP_GET_GLOBAL, 0), // global
+                                        Instructions.make(Opcode.OP_GET_FREE, 0),   // a
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_GET_FREE, 1),   // b
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // c
+                                        Instructions.make(Opcode.OP_ADD),
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                // 中間層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 2),  // 77
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 0), // b
+                                        Instructions.make(Opcode.OP_GET_FREE, 0),   // a
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // b
+                                        Instructions.make(Opcode.OP_CLOSURE, 4, 2), // 2個自由變量
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                },
+                                // 外層函數
+                                new Object[]{
+                                        Instructions.make(Opcode.OP_CONSTANT, 1),  // 66
+                                        Instructions.make(Opcode.OP_SET_LOCAL, 0), // a
+                                        Instructions.make(Opcode.OP_GET_LOCAL, 0),  // a
+                                        Instructions.make(Opcode.OP_CLOSURE, 5, 1), // 1個自由變量
+                                        Instructions.make(Opcode.OP_RETURN_VALUE)
+                                }
+                        },
+                        new byte[][]{
+                                Instructions.make(Opcode.OP_CONSTANT, 0),  // 55
+                                Instructions.make(Opcode.OP_SET_GLOBAL, 0),
+                                Instructions.make(Opcode.OP_CLOSURE, 6, 0),
                                 Instructions.make(Opcode.OP_POP)
                         }
                 )
