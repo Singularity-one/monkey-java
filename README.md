@@ -3962,6 +3962,292 @@ data[1][0]
 
 ---
 
+# Writing A Compiler In Go — 第七章（Java 完整實現）
+
+本專案提供《**Writing A Compiler In Go**》**第七章：Functions（函數）** 的**完整 Java 實現**。本章是整個編譯器與虛擬機設計中最核心、也是最具挑戰性的一章，正式讓 Monkey 語言具備「可呼叫、可傳遞、可回傳」的函數系統。
+
+---
+
+## 章節目標
+
+完成本章後，Monkey 語言可以正確編譯並執行以下程式：
+
+```monkey
+let sum = fn(a, b) {
+    let c = a + b;
+    c;
+};
+
+sum(1, 2) + sum(3, 4);
+// => 10
+```
+
+---
+
+## 本章新增語言特性
+
+### 1. 函數字面量（Function Literal）
+
+* 函數作為一級公民（First-class function）
+* 函數可被指派、回傳、再次呼叫
+
+### 2. 函數調用（Function Call）
+
+* 支援任意數量參數
+* 參數數量於執行期驗證
+
+### 3. 局部變量（Local Bindings）
+
+* 函數內的 `let` 綁定為局部變量
+* 與全域變量完全隔離
+
+### 4. 返回機制（Return）
+
+* 顯式 `return <expr>`
+* 隱式返回最後一個表達式
+* 無返回值時回傳 `null`
+
+### 5. 作用域管理（Scope）
+
+* 全域作用域（GLOBAL）
+* 函數作用域（LOCAL）
+* 支援巢狀作用域
+
+---
+
+## 專案結構
+
+```
+project/
+├── com/monkey/
+│   ├── code/
+│   │   ├── Opcode.java
+│   │   ├── Instructions.java
+│   │   └── Definition.java
+│   ├── object/
+│   │   ├── MonkeyObject.java
+│   │   ├── ObjectType.java
+│   │   └── CompiledFunctionObject.java   # ⭐ 編譯後函數
+│   ├── compiler/
+│   │   ├── Compiler.java
+│   │   ├── CompilerTest.java
+│   │   ├── SymbolTable.java
+│   │   ├── Symbol.java
+│   │   ├── SymbolScope.java               # ⭐ 新增 LOCAL
+│   │   └── CompilationScope.java          # ⭐ 編譯作用域
+│   └── vm/
+│       ├── VM.java
+│       ├── VMTest.java
+│       └── Frame.java                     # ⭐ 調用幀
+```
+
+---
+
+## 新增操作碼（Opcodes）
+
+| Opcode            | 說明        | 操作數          |
+| ----------------- | --------- | ------------ |
+| `OP_CALL`         | 函數調用      | 參數數量 (uint8) |
+| `OP_RETURN_VALUE` | 返回值       | 無            |
+| `OP_RETURN`       | 返回 `null` | 無            |
+| `OP_GET_LOCAL`    | 取得局部變量    | 局部索引         |
+| `OP_SET_LOCAL`    | 設定局部變量    | 局部索引         |
+
+---
+
+## 核心新增元件
+
+### CompiledFunctionObject
+
+函數在**編譯期**會被轉換為 `CompiledFunctionObject` 並存入常量池：
+
+* 獨立的指令序列（Instructions）
+* 局部變量數量（numLocals）
+* 參數數量（numParameters）
+
+此設計讓函數成為可被 VM 呼叫的獨立單位。
+
+---
+
+### Frame（調用幀）
+
+每一次函數呼叫都會建立一個新的 `Frame`：
+
+* `ip`：指令指標
+* `basePointer`：函數在 stack 中的起始位置
+* `fn`：對應的 `CompiledFunctionObject`
+
+Frame 負責隔離不同函數的執行狀態。
+
+---
+
+### CompilationScope（編譯作用域）
+
+編譯器透過 **作用域堆疊** 管理巢狀函數：
+
+* 每個函數擁有自己的指令序列
+* 離開作用域時封裝為 `CompiledFunctionObject`
+* 返回外層作用域繼續編譯
+
+---
+
+## 符號表（Symbol Table）擴展
+
+### 新增 SymbolScope.LOCAL
+
+```text
+GLOBAL  → 全域變量
+LOCAL   → 函數參數與局部變量
+```
+
+### 局部索引配置
+
+```
+fn(a, b) {
+    let c = a + b;
+}
+
+符號索引：
+  a → LOCAL 0
+  b → LOCAL 1
+  c → LOCAL 2
+```
+
+參數與局部變量共享同一索引空間。
+
+---
+
+## 函數編譯流程（摘要）
+
+1. 進入新編譯作用域
+2. 建立封閉的符號表
+3. 定義參數為 LOCAL
+4. 編譯函數主體
+5. 處理隱式 / 顯式 return
+6. 離開作用域並產生 CompiledFunction
+7. 作為常量發射到主程式
+
+---
+
+## 函數調用流程（VM）
+
+### Stack 佈局
+
+呼叫前：
+
+```
+... | fn | arg1 | arg2 | <- sp
+```
+
+呼叫後：
+
+```
+... | fn | arg1 | arg2 | local1 | local2 | <- sp
+           ^
+           basePointer
+```
+
+### Return 行為
+
+* `OP_RETURN_VALUE`：回傳表達式結果
+* `OP_RETURN`：回傳 `null`
+* 回傳後恢復前一個 Frame
+
+---
+
+## 使用範例
+
+### 基本函數
+
+```monkey
+let add = fn(a, b) { a + b };
+add(1, 2);
+// => 3
+```
+
+### 局部變量
+
+```monkey
+let sum = fn(a, b) {
+    let c = a + b;
+    c;
+};
+```
+
+### 函數回傳函數
+
+```monkey
+let returnsOne = fn() { 1; };
+let f = fn() { returnsOne; };
+f()();
+// => 1
+```
+
+---
+
+## 測試
+
+### Compiler 測試
+
+```bash
+./gradlew test --tests CompilerTest.testFunctions
+./gradlew test --tests CompilerTest.testFunctionCalls
+./gradlew test --tests CompilerTest.testLetStatementScopes
+```
+
+### VM 測試
+
+```bash
+./gradlew test --tests VMTest.testCallingFunctionsWithoutArguments
+./gradlew test --tests VMTest.testCallingFunctionsWithArgumentsAndBindings
+```
+
+---
+
+## 與原書（Go 版）的差異
+
+* Java 類別與介面取代 Go struct
+* 使用例外處理（Exception）
+* Frame 與 Stack 採用固定大小陣列
+* 明確區分 GLOBAL / LOCAL 符號
+
+---
+
+## 章節總結
+
+第七章讓 Monkey 語言正式成為**可寫實用程式的語言**：
+
+* 函數是值
+* 支援參數與回傳
+* 正確的作用域與變量隔離
+* 完整的呼叫堆疊模型
+
+### 本章完成
+
+* ✅ 函數字面量
+* ✅ 函數調用
+* ✅ 局部變量
+* ✅ Return
+* ✅ 作用域
+
+### 尚未支援（後續章節）
+
+* ❌ 內建函數（Chapter 8）
+* ❌ 閉包 / 自由變量（Chapter 9）
+* ❌ 遞歸（Chapter 9）
+
+---
+
+## 下一章
+
+**Chapter 8：Built-in Functions**
+
+* `len()` / `first()` / `last()`
+* `rest()` / `push()`
+
+---
+
+
 
 
 
