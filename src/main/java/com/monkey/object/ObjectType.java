@@ -13,7 +13,8 @@ public enum ObjectType {
     STRING("STRING"),
     BUILTIN("BUILTIN"),
     ARRAY("ARRAY"),
-    HASH("HASH");
+    HASH("HASH"),
+    COMPILED_FUNCTION("COMPILED_FUNCTION");
 
     private final String value;
 

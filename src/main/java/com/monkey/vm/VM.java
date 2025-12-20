@@ -3,26 +3,26 @@ package com.monkey.vm;
 import com.monkey.code.Instructions;
 import com.monkey.code.Opcode;
 import com.monkey.compiler.Bytecode;
-import com.monkey.object.BooleanObject;
-import com.monkey.object.IntegerObject;
-import com.monkey.object.MonkeyObject;
-import com.monkey.object.NullObject;
+import com.monkey.object.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * VM 是棧式虛擬機
- * Chapter 5: Keeping Track of Names (擴展)
+ * Chapter 6: String, Array and Hash (擴展)
  *
  * 新增功能:
- * - 全局變量存儲
- * - OpSetGlobal, OpGetGlobal 指令執行
+ * - 字串連接運算
+ * - 陣列構建和索引
+ * - 雜湊表構建和索引
  */
 public class VM {
     private static final int STACK_SIZE = 2048;
-    private static final int GLOBALS_SIZE = 65536;  // Chapter 5: 最多 65536 個全局變量
+    private static final int GLOBALS_SIZE = 65536;
 
-    // 單例對象
     public static final BooleanObject TRUE = new BooleanObject(true);
     public static final BooleanObject FALSE = new BooleanObject(false);
     public static final NullObject NULL = new NullObject();
@@ -31,18 +31,12 @@ public class VM {
     private final Instructions instructions;
     private final MonkeyObject[] stack;
     private int sp;
-
-    // Chapter 5: 全局變量存儲
     private final MonkeyObject[] globals;
 
     public VM(Bytecode bytecode) {
         this(bytecode, new MonkeyObject[GLOBALS_SIZE]);
     }
 
-    /**
-     * Chapter 5: 帶全局變量的構造函數
-     * 用於在多次編譯之間保持全局變量狀態
-     */
     public VM(Bytecode bytecode, MonkeyObject[] globals) {
         this.instructions = bytecode.getInstructions();
         this.constants = bytecode.getConstants();
@@ -62,10 +56,6 @@ public class VM {
         return stack[sp];
     }
 
-    /**
-     * Chapter 5: 獲取全局變量數組
-     * 用於在多次編譯之間保持狀態
-     */
     public MonkeyObject[] getGlobals() {
         return globals;
     }
@@ -75,14 +65,11 @@ public class VM {
      */
     public void run() throws VMException {
         for (int ip = 0; ip < instructions.size(); ip++) {
-            // 取指
             byte opByte = instructions.get(ip);
             Opcode op = Opcode.fromByte(opByte);
 
-            // 解碼和執行
             switch (op) {
                 case OP_CONSTANT:
-                    // 載入常量
                     byte[] constIndexBytes = new byte[2];
                     constIndexBytes[0] = instructions.get(ip + 1);
                     constIndexBytes[1] = instructions.get(ip + 2);
@@ -95,7 +82,7 @@ public class VM {
                 case OP_SUB:
                 case OP_MUL:
                 case OP_DIV:
-                    executeBinaryIntegerOperation(op);
+                    executeBinaryOperation(op);
                     break;
 
                 case OP_TRUE:
@@ -121,7 +108,6 @@ public class VM {
                     break;
 
                 case OP_JUMP:
-                    // 無條件跳轉
                     byte[] posBytes = new byte[2];
                     posBytes[0] = instructions.get(ip + 1);
                     posBytes[1] = instructions.get(ip + 2);
@@ -130,7 +116,6 @@ public class VM {
                     break;
 
                 case OP_JUMP_NOT_TRUTHY:
-                    // 條件跳轉
                     posBytes = new byte[2];
                     posBytes[0] = instructions.get(ip + 1);
                     posBytes[1] = instructions.get(ip + 2);
@@ -148,27 +133,54 @@ public class VM {
                     break;
 
                 case OP_SET_GLOBAL:
-                    // Chapter 5: 設置全局變量
                     byte[] globalIndexBytes = new byte[2];
                     globalIndexBytes[0] = instructions.get(ip + 1);
                     globalIndexBytes[1] = instructions.get(ip + 2);
                     int globalIndex = Instructions.readUint16(globalIndexBytes);
                     ip += 2;
-
-                    // 彈出堆疊頂部的值並存儲到全局變量
                     globals[globalIndex] = pop();
                     break;
 
                 case OP_GET_GLOBAL:
-                    // Chapter 5: 獲取全局變量
                     globalIndexBytes = new byte[2];
                     globalIndexBytes[0] = instructions.get(ip + 1);
                     globalIndexBytes[1] = instructions.get(ip + 2);
                     globalIndex = Instructions.readUint16(globalIndexBytes);
                     ip += 2;
-
-                    // 從全局變量載入值並推入堆疊
                     push(globals[globalIndex]);
+                    break;
+
+                // Chapter 6: 陣列指令
+                case OP_ARRAY:
+                    byte[] numElementsBytes = new byte[2];
+                    numElementsBytes[0] = instructions.get(ip + 1);
+                    numElementsBytes[1] = instructions.get(ip + 2);
+                    int numElements = Instructions.readUint16(numElementsBytes);
+                    ip += 2;
+
+                    MonkeyObject array = buildArray(sp - numElements, sp);
+                    sp = sp - numElements;
+                    push(array);
+                    break;
+
+                // Chapter 6: 雜湊表指令
+                case OP_HASH:
+                    numElementsBytes = new byte[2];
+                    numElementsBytes[0] = instructions.get(ip + 1);
+                    numElementsBytes[1] = instructions.get(ip + 2);
+                    numElements = Instructions.readUint16(numElementsBytes);
+                    ip += 2;
+
+                    MonkeyObject hash = buildHash(sp - numElements, sp);
+                    sp = sp - numElements;
+                    push(hash);
+                    break;
+
+                // Chapter 6: 索引指令
+                case OP_INDEX:
+                    MonkeyObject index = pop();
+                    MonkeyObject left = pop();
+                    executeIndexExpression(left, index);
                     break;
 
                 case OP_POP:
@@ -179,12 +191,115 @@ public class VM {
     }
 
     /**
-     * 執行二元整數運算
+     * Chapter 6: 構建陣列
      */
-    private void executeBinaryIntegerOperation(Opcode op) throws VMException {
+    private MonkeyObject buildArray(int startIndex, int endIndex) {
+        List<MonkeyObject> elements = new ArrayList<>();
+        for (int i = startIndex; i < endIndex; i++) {
+            elements.add(stack[i]);
+        }
+        return new ArrayObject(elements);
+    }
+
+    /**
+     * Chapter 6: 構建雜湊表
+     */
+    private MonkeyObject buildHash(int startIndex, int endIndex) throws VMException {
+        Map<HashKey, HashObject.HashPair> hashedPairs = new HashMap<>();
+
+        for (int i = startIndex; i < endIndex; i += 2) {
+            MonkeyObject key = stack[i];
+            MonkeyObject value = stack[i + 1];
+
+            HashObject.HashPair pair = new HashObject.HashPair(key, value);
+
+            if (!(key instanceof Hashable)) {
+                throw new VMException("unusable as hash key: " + key.type());
+            }
+
+            Hashable hashKey = (Hashable) key;
+            hashedPairs.put(hashKey.hashKey(), pair);
+        }
+
+        return new HashObject(hashedPairs);
+    }
+
+    /**
+     * Chapter 6: 執行索引表達式
+     */
+    private void executeIndexExpression(MonkeyObject left, MonkeyObject index) throws VMException {
+        if (left.type() == ObjectType.ARRAY && index.type() == ObjectType.INTEGER) {
+            executeArrayIndex(left, index);
+        } else if (left.type() == ObjectType.HASH) {
+            executeHashIndex(left, index);
+        } else {
+            throw new VMException("index operator not supported: " + left.type());
+        }
+    }
+
+    /**
+     * Chapter 6: 執行陣列索引
+     */
+    private void executeArrayIndex(MonkeyObject array, MonkeyObject index) throws VMException {
+        ArrayObject arrayObject = (ArrayObject) array;
+        long i = ((IntegerObject) index).getValue();
+        long max = arrayObject.getElements().size() - 1;
+
+        if (i < 0 || i > max) {
+            push(NULL);
+            return;
+        }
+
+        push(arrayObject.getElements().get((int) i));
+    }
+
+    /**
+     * Chapter 6: 執行雜湊表索引
+     */
+    private void executeHashIndex(MonkeyObject hash, MonkeyObject index) throws VMException {
+        HashObject hashObject = (HashObject) hash;
+
+        if (!(index instanceof Hashable)) {
+            throw new VMException("unusable as hash key: " + index.type());
+        }
+
+        Hashable key = (Hashable) index;
+        HashObject.HashPair pair = hashObject.getPairs().get(key.hashKey());
+
+        if (pair == null) {
+            push(NULL);
+            return;
+        }
+
+        push(pair.value);
+    }
+
+    /**
+     * Chapter 6: 執行二元運算（支援字串連接）
+     */
+    private void executeBinaryOperation(Opcode op) throws VMException {
         MonkeyObject right = pop();
         MonkeyObject left = pop();
 
+        ObjectType leftType = left.type();
+        ObjectType rightType = right.type();
+
+        if (leftType == ObjectType.INTEGER && rightType == ObjectType.INTEGER) {
+            executeBinaryIntegerOperation(op, left, right);
+        } else if (leftType == ObjectType.STRING && rightType == ObjectType.STRING) {
+            executeBinaryStringOperation(op, left, right);
+        } else {
+            throw new VMException(
+                    String.format("unsupported types for binary operation: %s %s", leftType, rightType)
+            );
+        }
+    }
+
+    /**
+     * 執行二元整數運算
+     */
+    private void executeBinaryIntegerOperation(Opcode op, MonkeyObject left, MonkeyObject right)
+            throws VMException {
         long leftValue = ((IntegerObject) left).getValue();
         long rightValue = ((IntegerObject) right).getValue();
 
@@ -210,6 +325,21 @@ public class VM {
         }
 
         push(new IntegerObject(result));
+    }
+
+    /**
+     * Chapter 6: 執行二元字串運算（字串連接）
+     */
+    private void executeBinaryStringOperation(Opcode op, MonkeyObject left, MonkeyObject right)
+            throws VMException {
+        if (op != Opcode.OP_ADD) {
+            throw new VMException("unknown string operator: " + op);
+        }
+
+        String leftValue = ((StringObject) left).getValue();
+        String rightValue = ((StringObject) right).getValue();
+
+        push(new StringObject(leftValue + rightValue));
     }
 
     /**
@@ -239,9 +369,6 @@ public class VM {
         }
     }
 
-    /**
-     * 執行整數比較
-     */
     private void executeIntegerComparison(Opcode op, IntegerObject left, IntegerObject right)
             throws VMException {
         long leftValue = left.getValue();
@@ -262,9 +389,6 @@ public class VM {
         }
     }
 
-    /**
-     * 執行邏輯非運算
-     */
     private void executeBangOperator() throws VMException {
         MonkeyObject operand = pop();
 
@@ -279,9 +403,6 @@ public class VM {
         }
     }
 
-    /**
-     * 執行取負運算
-     */
     private void executeMinusOperator() throws VMException {
         MonkeyObject operand = pop();
 
@@ -293,9 +414,6 @@ public class VM {
         push(new IntegerObject(-value));
     }
 
-    /**
-     * 判斷對象是否為真值
-     */
     private boolean isTruthy(MonkeyObject obj) {
         if (obj == NULL) {
             return false;
@@ -309,16 +427,10 @@ public class VM {
         return true;
     }
 
-    /**
-     * 將 Java boolean 轉換為 Monkey BooleanObject
-     */
     private BooleanObject nativeBoolToBooleanObject(boolean value) {
         return value ? TRUE : FALSE;
     }
 
-    /**
-     * 推入堆疊
-     */
     private void push(MonkeyObject obj) throws VMException {
         if (sp >= STACK_SIZE) {
             throw new VMException("stack overflow");
@@ -328,18 +440,12 @@ public class VM {
         sp++;
     }
 
-    /**
-     * 從堆疊彈出
-     */
     private MonkeyObject pop() {
         MonkeyObject o = stack[sp - 1];
         sp--;
         return o;
     }
 
-    /**
-     * 虛擬機異常
-     */
     public static class VMException extends Exception {
         public VMException(String message) {
             super(message);

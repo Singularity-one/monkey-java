@@ -7,7 +7,7 @@ import java.util.Map;
 
 /**
  * Instructions 表示字節碼指令序列
- * Chapter 5: Keeping Track of Names (擴展)
+ * Chapter 6: String, Array and Hash (擴展)
  */
 public class Instructions {
     private final List<Byte> bytes;
@@ -49,6 +49,11 @@ public class Instructions {
         // Chapter 5 - 全局變量 (2 字節操作數: 全局變量索引)
         DEFINITIONS.put(Opcode.OP_SET_GLOBAL, new Definition("OpSetGlobal", new int[]{2}));
         DEFINITIONS.put(Opcode.OP_GET_GLOBAL, new Definition("OpGetGlobal", new int[]{2}));
+
+        // Chapter 6 - 複合數據類型（新增）
+        DEFINITIONS.put(Opcode.OP_ARRAY, new Definition("OpArray", new int[]{2}));
+        DEFINITIONS.put(Opcode.OP_HASH, new Definition("OpHash", new int[]{2}));
+        DEFINITIONS.put(Opcode.OP_INDEX, new Definition("OpIndex", new int[]{}));
     }
 
     public Instructions() {

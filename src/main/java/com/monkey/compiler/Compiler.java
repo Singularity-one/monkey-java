@@ -3,21 +3,22 @@ package com.monkey.compiler;
 import com.monkey.ast.*;
 import com.monkey.code.Instructions;
 import com.monkey.code.Opcode;
-import com.monkey.object.BooleanObject;
-import com.monkey.object.IntegerObject;
-import com.monkey.object.MonkeyObject;
+import com.monkey.object.*;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Compiler 將 AST 編譯為字節碼
- * Chapter 5: Keeping Track of Names (擴展)
+ * Chapter 6: String, Array and Hash (擴展)
  *
  * 新增功能:
- * - let 語句編譯
- * - 標識符編譯
- * - 符號表管理
+ * - 字串字面量編譯
+ * - 陣列字面量編譯
+ * - 雜湊表字面量編譯
+ * - 索引表達式編譯
  */
 public class Compiler {
     private final Instructions instructions;
@@ -26,7 +27,6 @@ public class Compiler {
     private EmittedInstruction lastInstruction;
     private EmittedInstruction previousInstruction;
 
-    // Chapter 5: 符號表
     private final SymbolTable symbolTable;
 
     public Compiler() {
@@ -35,9 +35,6 @@ public class Compiler {
         this.symbolTable = new SymbolTable();
     }
 
-    /**
-     * 帶符號表的構造函數 (用於測試)
-     */
     public Compiler(SymbolTable symbolTable) {
         this.instructions = new Instructions();
         this.constants = new ArrayList<>();
@@ -66,7 +63,6 @@ public class Compiler {
             }
         }
         else if (node instanceof LetStatement) {
-            // Chapter 5: 編譯 let 語句
             compileLetStatement((LetStatement) node);
         }
         else if (node instanceof IfExpression) {
@@ -131,6 +127,12 @@ public class Compiler {
             IntegerObject integer = new IntegerObject(intLit.getValue());
             emit(Opcode.OP_CONSTANT, addConstant(integer));
         }
+        // Chapter 6: 字串字面量
+        else if (node instanceof StringLiteral) {
+            StringLiteral strLit = (StringLiteral) node;
+            StringObject str = new StringObject(strLit.getValue());
+            emit(Opcode.OP_CONSTANT, addConstant(str));
+        }
         else if (node instanceof BooleanLiteral) {
             BooleanLiteral boolLit = (BooleanLiteral) node;
             if (boolLit.getValue()) {
@@ -139,49 +141,109 @@ public class Compiler {
                 emit(Opcode.OP_FALSE);
             }
         }
+        // Chapter 6: 陣列字面量
+        else if (node instanceof ArrayLiteral) {
+            compileArrayLiteral((ArrayLiteral) node);
+        }
+        // Chapter 6: 雜湊表字面量
+        else if (node instanceof HashLiteral) {
+            compileHashLiteral((HashLiteral) node);
+        }
+        // Chapter 6: 索引表達式
+        else if (node instanceof IndexExpression) {
+            compileIndexExpression((IndexExpression) node);
+        }
         else if (node instanceof Identifier) {
-            // Chapter 5: 編譯標識符
             compileIdentifier((Identifier) node);
         }
     }
 
     /**
-     * Chapter 5: 編譯 let 語句
+     * Chapter 6: 編譯陣列字面量
      *
-     * let x = 10;
+     * [1, 2, 3]
      *
      * 編譯為:
-     *   <compile value>
-     *   OpSetGlobal <index>
+     *   OpConstant 0  // 1
+     *   OpConstant 1  // 2
+     *   OpConstant 2  // 3
+     *   OpArray 3     // 構建包含 3 個元素的陣列
+     */
+    private void compileArrayLiteral(ArrayLiteral array) throws CompilerException {
+        // 1. 編譯每個元素
+        for (Expression element : array.getElements()) {
+            compile(element);
+        }
+
+        // 2. 發射 OpArray 指令，操作數是元素數量
+        emit(Opcode.OP_ARRAY, array.getElements().size());
+    }
+
+    /**
+     * Chapter 6: 編譯雜湊表字面量
+     *
+     * {1: 2, 3: 4}
+     *
+     * 編譯為:
+     *   OpConstant 0  // 1 (key)
+     *   OpConstant 1  // 2 (value)
+     *   OpConstant 2  // 3 (key)
+     *   OpConstant 3  // 4 (value)
+     *   OpHash 4      // 構建包含 4 個元素 (2 對鍵值對) 的雜湊表
+     */
+    private void compileHashLiteral(HashLiteral hash) throws CompilerException {
+        // 1. 排序 keys 以保證順序一致性
+        List<Expression> keys = new ArrayList<>(hash.getPairs().keySet());
+        keys.sort(Comparator.comparing(Node::string));
+
+        // 2. 按順序編譯每對鍵值
+        for (Expression key : keys) {
+            compile(key);
+            compile(hash.getPairs().get(key));
+        }
+
+        // 3. 發射 OpHash 指令，操作數是鍵值對總數 (keys + values)
+        emit(Opcode.OP_HASH, hash.getPairs().size() * 2);
+    }
+
+    /**
+     * Chapter 6: 編譯索引表達式
+     *
+     * array[index]
+     *
+     * 編譯為:
+     *   <compile array>
+     *   <compile index>
+     *   OpIndex
+     */
+    private void compileIndexExpression(IndexExpression indexExpr) throws CompilerException {
+        // 1. 編譯被索引的對象
+        compile(indexExpr.getLeft());
+
+        // 2. 編譯索引
+        compile(indexExpr.getIndex());
+
+        // 3. 發射 OpIndex 指令
+        emit(Opcode.OP_INDEX);
+    }
+
+    /**
+     * Chapter 5: 編譯 let 語句
      */
     private void compileLetStatement(LetStatement letStmt) throws CompilerException {
-        // 1. 編譯值表達式
         compile(letStmt.getValue());
-
-        // 2. 在符號表中定義變量
         Symbol symbol = symbolTable.define(letStmt.getName().getValue());
-
-        // 3. 發射 SetGlobal 指令
         emit(Opcode.OP_SET_GLOBAL, symbol.getIndex());
     }
 
     /**
      * Chapter 5: 編譯標識符
-     *
-     * x
-     *
-     * 編譯為:
-     *   OpGetGlobal <index>
      */
     private void compileIdentifier(Identifier ident) throws CompilerException {
-        // 1. 在符號表中查找變量
         Symbol symbol = symbolTable.resolve(ident.getValue());
-
         if (symbol == null) {
             throw new CompilerException("undefined variable " + ident.getValue());
         }
-
-        // 2. 發射 GetGlobal 指令
         emit(Opcode.OP_GET_GLOBAL, symbol.getIndex());
     }
 
@@ -218,9 +280,6 @@ public class Compiler {
         changeOperand(jumpPos, afterAlternativePos);
     }
 
-    /**
-     * 發射一條指令
-     */
     private int emit(Opcode op, int... operands) {
         byte[] ins = Instructions.make(op, operands);
         int pos = addInstruction(ins);
@@ -228,26 +287,17 @@ public class Compiler {
         return pos;
     }
 
-    /**
-     * 添加指令到指令序列
-     */
     private int addInstruction(byte[] ins) {
         int posNewInstruction = instructions.size();
         instructions.append(ins);
         return posNewInstruction;
     }
 
-    /**
-     * 設置最後發射的指令
-     */
     private void setLastInstruction(Opcode op, int pos) {
         previousInstruction = lastInstruction;
         lastInstruction = new EmittedInstruction(op, pos);
     }
 
-    /**
-     * 檢查最後一條指令是否是指定的操作碼
-     */
     private boolean lastInstructionIs(Opcode op) {
         if (instructions.size() == 0) {
             return false;
@@ -255,9 +305,6 @@ public class Compiler {
         return lastInstruction != null && lastInstruction.getOpcode() == op;
     }
 
-    /**
-     * 移除最後一條 OpPop 指令
-     */
     private void removeLastPop() {
         if (lastInstruction != null && lastInstruction.getOpcode() == Opcode.OP_POP) {
             instructions.removeLast(1);
@@ -265,38 +312,23 @@ public class Compiler {
         }
     }
 
-    /**
-     * 修改指定位置的操作數
-     */
     private void changeOperand(int opPos, int operand) {
         instructions.changeOperand(opPos, operand);
     }
 
-    /**
-     * 添加常量到常量池
-     */
     private int addConstant(MonkeyObject obj) {
         constants.add(obj);
         return constants.size() - 1;
     }
 
-    /**
-     * 獲取編譯結果
-     */
     public Bytecode bytecode() {
         return new Bytecode(instructions, constants);
     }
 
-    /**
-     * 獲取符號表 (用於測試)
-     */
     public SymbolTable getSymbolTable() {
         return symbolTable;
     }
 
-    /**
-     * 編譯器異常
-     */
     public static class CompilerException extends Exception {
         public CompilerException(String message) {
             super(message);
