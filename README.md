@@ -3743,13 +3743,226 @@ let y = 2;
 x  // y 未使用但占用索引 1
 ```
 
-## 📖 參考資料
+# Writing A Compiler In Go — 第六章（Java 完整實現）
 
-- [原書: Writing A Compiler In Go](https://compilerbook.com/)
-- [您的項目: monkey-java](https://github.com/Singularity-one/monkey-java)
+本專案提供《**Writing A Compiler In Go**》**第六章：String、Array、Hash** 的**完整 Java 實現**，涵蓋編譯器（Compiler）、虛擬機（VM）、位元組碼（Bytecode）與對象系統的擴展。
 
 ---
 
-**繼續加油!您的編譯器現在支持變量了!** 🚀
+## 章節目標
+
+本章為 Monkey 編譯器與虛擬機新增三種複合資料型別，並能正確編譯與執行以下程式：
+
+```monkey
+[1, 2, 3][1]
+// => 2
+
+{"one": 1, "two": 2, "three": 3}["o" + "ne"]
+// => 1
+```
+
+---
+
+## 新增語言特性
+
+### 1. String（字串）
+
+* 字串字面量作為常量
+* 使用 `+` 進行字串連接
+* 字串可作為 Hash 的鍵
+
+### 2. Array（陣列）
+
+* 陣列字面量：`[1, 2, 3]`
+* 元素可為任意表達式
+* 整數索引存取
+* 支援巢狀陣列
+* 越界存取回傳 `null`
+
+### 3. Hash（雜湊表）
+
+* 雜湊表字面量：`{key: value}`
+* 鍵支援 `Integer / Boolean / String`
+* 值可為任意表達式
+* 鍵不存在回傳 `null`
+
+### 4. Index Operator（索引運算子）
+
+* 陣列索引：`array[index]`
+* 雜湊表索引：`hash[key]`
+* 支援巢狀索引與運算式索引
+
+---
+
+## 專案結構
+
+```
+project/
+├── com/monkey/
+│   ├── code/
+│   │   ├── Opcode.java          # 操作碼列舉（新增 OP_ARRAY, OP_HASH, OP_INDEX）
+│   │   ├── Instructions.java    # 位元組碼處理
+│   │   └── Definition.java      # 操作碼定義
+│   ├── object/
+│   │   ├── ObjectType.java
+│   │   ├── MonkeyObject.java
+│   │   ├── IntegerObject.java   # 實作 Hashable
+│   │   ├── BooleanObject.java   # 實作 Hashable
+│   │   ├── StringObject.java    # ⭐ Chapter 6
+│   │   ├── ArrayObject.java     # ⭐ Chapter 6
+│   │   ├── HashObject.java      # ⭐ Chapter 6
+│   │   ├── Hashable.java        # ⭐ Chapter 6
+│   │   └── HashKey.java         # ⭐ Chapter 6
+│   ├── compiler/
+│   │   ├── Compiler.java        # 擴充字串、陣列、雜湊表
+│   │   ├── CompilerTest.java
+│   │   └── SymbolTable.java
+│   └── vm/
+│       ├── VM.java              # 擴充執行邏輯
+│       └── VMTest.java
+```
+
+---
+
+## 新增操作碼（Opcodes）
+
+| Opcode     | 說明    | 操作數           |
+| ---------- | ----- | ------------- |
+| `OP_ARRAY` | 建立陣列  | 元素數量 (uint16) |
+| `OP_HASH`  | 建立雜湊表 | 鍵值總數 (uint16) |
+| `OP_INDEX` | 索引操作  | 無             |
+
+---
+
+## 編譯與執行流程概覽
+
+### String 編譯與執行
+
+* 編譯期：字串字面量加入常量池
+* 執行期：`OpAdd` 對兩個 `StringObject` 進行連接
+
+### Array 編譯與執行
+
+* 依序編譯所有元素
+* 使用 `OP_ARRAY` 建立陣列物件
+* 索引越界回傳 `null`
+
+### Hash 編譯與執行
+
+* Key 排序以確保位元組碼穩定
+* Key 必須實作 `Hashable`
+* VM 建立 `HashKey → HashPair` 映射
+
+### Index Operator
+
+* 先彈出 index，再彈出被索引物件
+* Array / Hash 分流處理
+* 不支援型別直接拋出 VM 例外
+
+---
+
+## Hashable 設計
+
+### 可作為 Hash Key 的型別
+
+| 型別      | 支援 | 說明              |
+| ------- | -- | --------------- |
+| Integer | ✅  | 使用 long 值       |
+| Boolean | ✅  | true=1, false=0 |
+| String  | ✅  | 使用 `hashCode()` |
+| Array   | ❌  | 不可雜湊            |
+| Hash    | ❌  | 不可雜湊            |
+| Null    | ❌  | 不可雜湊            |
+
+---
+
+## 測試
+
+### 編譯器測試
+
+```bash
+./gradlew test --tests CompilerTest.testStringExpressions
+./gradlew test --tests CompilerTest.testArrayLiterals
+./gradlew test --tests CompilerTest.testHashLiterals
+./gradlew test --tests CompilerTest.testIndexExpressions
+```
+
+### VM 測試
+
+```bash
+./gradlew test --tests VMTest.testStringExpressions
+./gradlew test --tests VMTest.testArrayLiterals
+./gradlew test --tests VMTest.testHashLiterals
+./gradlew test --tests VMTest.testIndexExpressions
+```
+
+---
+
+## 使用範例
+
+### String
+
+```monkey
+"Hello" + " " + "World!"
+// => "Hello World!"
+```
+
+### Array
+
+```monkey
+let arr = [1, 2, 3];
+arr[1]
+// => 2
+```
+
+### Hash
+
+```monkey
+let user = {"name": "Alice", "age": 30};
+user["name"]
+// => "Alice"
+```
+
+### 巢狀結構
+
+```monkey
+let data = [[1, 2], [3, 4]];
+data[1][0]
+// => 3
+```
+
+---
+
+## 章節總結
+
+第六章完成 Monkey 語言的**第一批複合資料型別**：
+
+* String：可連接、可作為 Hash Key
+* Array：支援索引與巢狀結構
+* Hash：Key-Value 儲存與查詢
+* Index Operator：統一索引語法
+
+並新增三個關鍵 Opcode：
+
+* `OP_ARRAY`
+* `OP_HASH`
+* `OP_INDEX`
+
+---
+
+## 下一章
+
+**Chapter 7：Functions**
+
+* 函數字面量
+* 函數呼叫
+* 區域變數
+* 參數傳遞
+* Return 指令
+
+---
+
+
+
 
 
